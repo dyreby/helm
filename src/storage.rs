@@ -10,9 +10,11 @@
 //!   logbook.jsonl    # Append-only logbook entries, one JSON object per line
 //! ```
 
-use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::{
+    fs::{self, OpenOptions},
+    io::{BufRead, BufReader, Write},
+    path::PathBuf,
+};
 
 use uuid::Uuid;
 
@@ -155,10 +157,13 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::*;
-    use jiff::Timestamp;
+
     use std::path::PathBuf;
+
+    use jiff::Timestamp;
     use tempfile::TempDir;
+
+    use crate::model::*;
 
     fn test_storage() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();

@@ -1,4 +1,6 @@
 mod model;
+#[allow(dead_code)]
+mod observe;
 mod storage;
 mod tui;
 

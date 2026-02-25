@@ -3,8 +3,10 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use super::position::Position;
-use super::source::{Moment, SourceQuery};
+use super::{
+    position::Position,
+    source::{Moment, SourceQuery},
+};
 
 /// An immutable record of observation: what was planned, what was seen,
 /// and what it means.
