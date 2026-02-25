@@ -8,7 +8,8 @@
 //! <root>/<uuid>/
 //!   voyage.json      # Voyage metadata
 //!   logbook.jsonl    # Append-only logbook entries (bearings + action reports)
-//!   moments.jsonl    # Raw observation data, linked to bearings by ID
+//!   moments/         # Raw observation data, one file per bearing
+//!     <bearing-id>.json
 //! ```
 
 use std::{
@@ -156,19 +157,19 @@ impl Storage {
 
     // ── Moments ──
 
-    /// Appends a moment record to a voyage's moments file.
-    pub fn append_moment(&self, voyage_id: Uuid, record: &MomentRecord) -> Result<()> {
+    /// Saves a moment record as an individual file under `moments/`.
+    pub fn save_moment(&self, voyage_id: Uuid, record: &MomentRecord) -> Result<()> {
         let dir = self.voyage_dir(voyage_id);
         if !dir.exists() {
             return Err(StorageError::VoyageNotFound(voyage_id));
         }
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("moments.jsonl"))?;
-        let mut line = serde_json::to_string(record)?;
-        line.push('\n');
-        file.write_all(line.as_bytes())?;
+        let moments_dir = dir.join("moments");
+        fs::create_dir_all(&moments_dir)?;
+        let json = serde_json::to_string_pretty(record)?;
+        fs::write(
+            moments_dir.join(format!("{}.json", record.bearing_id)),
+            json,
+        )?;
         Ok(())
     }
 
@@ -389,19 +390,22 @@ mod tests {
     }
 
     #[test]
-    fn append_and_persist_moment() {
+    fn save_and_load_moment() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
         let bearing_id = Uuid::new_v4();
         let record = sample_moment_record(bearing_id);
-        storage.append_moment(voyage.id, &record).unwrap();
+        storage.save_moment(voyage.id, &record).unwrap();
 
-        // Verify the file exists and is valid JSONL.
-        let path = storage.voyage_dir(voyage.id).join("moments.jsonl");
+        // Verify the file exists as an individual JSON file.
+        let path = storage
+            .voyage_dir(voyage.id)
+            .join("moments")
+            .join(format!("{bearing_id}.json"));
         let content = fs::read_to_string(path).unwrap();
-        let parsed: MomentRecord = serde_json::from_str(content.trim()).unwrap();
+        let parsed: MomentRecord = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed.bearing_id, bearing_id);
     }
 }

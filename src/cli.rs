@@ -238,7 +238,7 @@ fn cmd_record(
         .map_err(|e| format!("failed to save bearing: {e}"))?;
 
     storage
-        .append_moment(voyage.id, &output.moment_record)
+        .save_moment(voyage.id, &output.moment_record)
         .map_err(|e| format!("failed to save moment: {e}"))?;
 
     let short_id = &bearing.id.to_string()[..8];
