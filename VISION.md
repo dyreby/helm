@@ -16,7 +16,7 @@ Helm is a Rust TUI (ratatui) built around the OODA loop. It's a personal tool, d
 
 The agent is a stateless reasoning coprocessor. Any LLM that can receive structured context and return structured proposals will work. Helm doesn't depend on a specific coding agent; it needs a thin interface for sending prompts and parsing responses. The agent proposes. Helm enforces. I approve. No tool autonomy. No hidden state. No silent scope expansion.
 
-Helm delegates specialized interaction to external tools. An editor for reviewing and approving text artifacts. A conversational agent for the thinking phase. Which tools those are is a preference, not a dependency. Helm defines the contracts (what context goes in, what artifact comes out) and lets you bring what you like. I use [Helix](https://helix-editor.com/) and [pi](https://github.com/badlogic/pi-mono).
+Helm delegates specialized interaction to external tools. An editor for reviewing and approving text artifacts. A conversational agent for the collaboration phase. Which tools those are is a preference, not a dependency. Helm defines the contracts (what context goes in, what artifact comes out) and lets you bring what you like. I use [Helix](https://helix-editor.com/) and [pi](https://github.com/badlogic/pi-mono).
 
 Sessions are short by design. The ideal session is one command, a few steps, and a clean exit. Over time, most runs should converge toward: take bearing, decide on action, confirm, done.
 
@@ -132,7 +132,7 @@ Names that drive the design. These are the current best names; some are settled,
 | **Source kinds** | Domains of observable reality | Settled as a concept; individual kinds will evolve |
 | **Scope / Focus** | Data model for survey/inspect attention | Settled |
 | **Survey / Inspect** | UI actions for breadth/depth | Settled |
-| **Course** | The conversational thinking phase | Open — might not need a formal type |
+| **Course** | The conversational collaboration phase | Open — might not need a formal type |
 
 ## Design Principles
 
