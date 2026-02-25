@@ -6,13 +6,12 @@ use uuid::Uuid;
 
 use super::{position::Position, source::SourceQuery};
 
-/// An immutable record of observation: what was planned, what was seen,
-/// and what it means.
+/// An immutable record of observation: what was planned, what was seen, and what it means.
 ///
-/// The moment (raw observation data) is stored separately in `moments.jsonl`
-/// and linked by `id`. The bearing in the logbook carries the plan, position,
-/// and timestamps — everything needed to tell the story. The moment is
-/// available for deeper inspection when present, but may be pruned.
+/// The moment (raw observation data) is stored separately in `moments.jsonl` and linked by `id`.
+/// The bearing in the logbook carries the plan, position, and timestamps —
+/// everything needed to tell the story.
+/// The moment is available for deeper inspection when present, but may be pruned.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bearing {
     /// Unique identifier. Links this bearing to its moment in `moments.jsonl`.

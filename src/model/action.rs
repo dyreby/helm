@@ -7,17 +7,17 @@ use serde::{Deserialize, Serialize};
 
 /// Intent to affect the world.
 ///
-/// Describes what should happen, not how. Reviewed and approved before
-/// execution through Helm's gate (editor for text, yes/no for irreversible
-/// operations).
+/// Describes what should happen, not how.
+/// Reviewed and approved before execution through Helm's gate
+/// (editor for text, yes/no for irreversible operations).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum ActionPlan {
     /// Create a new file or overwrite an existing one entirely.
     WriteFiles { files: Vec<FileWrite> },
 
-    /// Make surgical edits to existing files. Finds exact text and replaces it,
-    /// leaving the rest of the file untouched.
+    /// Make surgical edits to existing files.
+    /// Finds exact text and replaces it, leaving the rest of the file untouched.
     EditFiles { edits: Vec<FileEdit> },
 }
 

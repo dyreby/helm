@@ -6,8 +6,8 @@
 //!
 //! 1. **Observe** — execute a plan and produce a moment (raw observation).
 //!    The caller reviews the moment before proceeding.
-//! 2. **Record** — attach a position to the plan, producing the final
-//!    immutable bearing. The moment is stored separately, linked by ID.
+//! 2. **Record** — attach a position to the plan, producing the final immutable bearing.
+//!    The moment is stored separately, linked by ID.
 
 use uuid::Uuid;
 
@@ -36,8 +36,8 @@ pub fn observe_bearing(plan: &BearingPlan) -> Result<MomentRecord, &'static str>
 
 /// Assemble a bearing from a plan, moment record, and position text.
 ///
-/// Call this after reviewing the moment from `observe_bearing`. The bearing
-/// carries the plan and position; the moment is stored separately.
+/// Call this after reviewing the moment from `observe_bearing`.
+/// The bearing carries the plan and position; the moment is stored separately.
 pub fn record_bearing(
     plan: BearingPlan,
     moment_record: &MomentRecord,

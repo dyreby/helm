@@ -12,11 +12,9 @@
 //!     <bearing-id>.json
 //! ```
 
-use std::{
-    fs::{self, OpenOptions},
-    io::{BufRead, BufReader, Write},
-    path::PathBuf,
-};
+use std::fs::{self, OpenOptions};
+use std::io::{self, BufRead, BufReader, Write};
+use std::path::PathBuf;
 
 use uuid::Uuid;
 
@@ -32,13 +30,13 @@ pub enum StorageError {
     VoyageAlreadyExists(Uuid),
 
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }
 
-pub type Result<T> = std::result::Result<T, StorageError>;
+pub type Result<T> = core::result::Result<T, StorageError>;
 
 /// Local file-based storage for voyages and logbooks.
 pub struct Storage {
@@ -100,7 +98,7 @@ impl Storage {
         let mut voyages = Vec::new();
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(voyages),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(voyages),
             Err(e) => return Err(e.into()),
         };
         for entry in entries {

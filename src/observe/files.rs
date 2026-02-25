@@ -3,7 +3,8 @@
 //! Survey lists directory contents with metadata.
 //! Inspect reads file contents, distinguishing text from binary.
 
-use std::{fs, path::Path};
+use std::fs;
+use std::path::Path;
 
 use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation};
 
@@ -12,8 +13,8 @@ use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection,
 /// Each scope path is surveyed (directory listing with metadata).
 /// Each focus path is inspected (file contents read and classified).
 ///
-/// Paths that don't exist or can't be read produce error entries
-/// rather than panics — observation is always total.
+/// Paths that don't exist or can't be read produce error entries rather than panics.
+/// Observation is always total.
 pub fn observe_files(scope: &[impl AsRef<Path>], focus: &[impl AsRef<Path>]) -> Observation {
     let survey = scope.iter().map(|p| survey_directory(p.as_ref())).collect();
     let inspections = focus.iter().map(|p| inspect_file(p.as_ref())).collect();
@@ -26,9 +27,8 @@ pub fn observe_files(scope: &[impl AsRef<Path>], focus: &[impl AsRef<Path>]) -> 
 
 /// List a directory's immediate contents with metadata.
 ///
-/// If the path is not a directory or can't be read, returns an empty
-/// entry list. The path is always recorded so the caller knows what
-/// was attempted.
+/// If the path is not a directory or can't be read, returns an empty entry list.
+/// The path is always recorded so the caller knows what was attempted.
 fn survey_directory(path: &Path) -> DirectorySurvey {
     let entries = match fs::read_dir(path) {
         Ok(read_dir) => {
@@ -36,11 +36,11 @@ fn survey_directory(path: &Path) -> DirectorySurvey {
                 .filter_map(|entry| {
                     let entry = entry.ok()?;
                     let metadata = entry.metadata().ok();
-                    let is_dir = metadata.as_ref().is_some_and(std::fs::Metadata::is_dir);
+                    let is_dir = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
                     let size_bytes = if is_dir {
                         None
                     } else {
-                        metadata.as_ref().map(std::fs::Metadata::len)
+                        metadata.as_ref().map(fs::Metadata::len)
                     };
 
                     Some(DirectoryEntry {

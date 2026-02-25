@@ -1,11 +1,12 @@
 //! Rust project source kind: project structure and documentation.
 //!
 //! Walks a Rust project tree, respects `.gitignore`, skips `target/`.
-//! Produces a full directory tree (survey) and inspects documentation
-//! files. Source code is not inspected — that's what `Files` is for
-//! on subsequent bearings.
+//! Produces a full directory tree (survey) and inspects documentation files.
+//! Source code is not inspected — that's what `Files` is for on subsequent bearings.
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
 
@@ -35,8 +36,8 @@ const DOC_NAMES: &[&str] = &[
 
 /// Returns true if a file is a documentation file.
 ///
-/// Matches well-known doc names (case-insensitive) and any `.md` file
-/// in the project root or a `docs/` directory.
+/// Matches well-known doc names (case-insensitive) and any `.md` file in the project root
+/// or a `docs/` directory.
 fn is_doc_file(path: &Path, root: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
@@ -68,11 +69,10 @@ fn is_doc_file(path: &Path, root: &Path) -> bool {
 /// Observe a Rust project: full directory tree and all documentation.
 ///
 /// Uses the `ignore` crate to respect `.gitignore` and skips `target/`.
-/// The tree gives structure; docs give intent and context. Source files
-/// are left for targeted `Files` queries on subsequent bearings.
+/// The tree gives structure; docs give intent and context.
+/// Source files are left for targeted `Files` queries on subsequent bearings.
 pub fn observe_rust_project(root: &Path) -> Observation {
-    let mut dir_entries: std::collections::BTreeMap<std::path::PathBuf, Vec<DirectoryEntry>> =
-        std::collections::BTreeMap::new();
+    let mut dir_entries: BTreeMap<PathBuf, Vec<DirectoryEntry>> = BTreeMap::new();
     let mut inspections: Vec<FileInspection> = Vec::new();
 
     let walker = WalkBuilder::new(root)
@@ -81,7 +81,7 @@ pub fn observe_rust_project(root: &Path) -> Observation {
             // Skip target/ at any level.
             !(entry.file_type().is_some_and(|ft| ft.is_dir()) && entry.file_name() == "target")
         })
-        .sort_by_file_name(std::cmp::Ord::cmp)
+        .sort_by_file_name(Ord::cmp)
         .build();
 
     for entry in walker.flatten() {
@@ -92,7 +92,7 @@ pub fn observe_rust_project(root: &Path) -> Observation {
         }
 
         let metadata = entry.metadata().ok();
-        let is_dir = metadata.as_ref().is_some_and(std::fs::Metadata::is_dir);
+        let is_dir = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
 
         // Record this entry under its parent directory.
         if let Some(parent) = path.parent() {
@@ -102,7 +102,7 @@ pub fn observe_rust_project(root: &Path) -> Observation {
                 size_bytes: if is_dir {
                     None
                 } else {
-                    metadata.as_ref().map(std::fs::Metadata::len)
+                    metadata.as_ref().map(fs::Metadata::len)
                 },
             };
             dir_entries
@@ -113,7 +113,7 @@ pub fn observe_rust_project(root: &Path) -> Observation {
 
         // Inspect documentation files only.
         if !is_dir && is_doc_file(path, root) {
-            let content = match std::fs::read(path) {
+            let content = match fs::read(path) {
                 Ok(bytes) => match String::from_utf8(bytes) {
                     Ok(text) => FileContent::Text(text),
                     Err(e) => FileContent::Binary {

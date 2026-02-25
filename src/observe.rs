@@ -1,7 +1,7 @@
 //! Observation logic: read the world, produce structured observations.
 //!
-//! Each source kind has its own submodule that knows how to execute
-//! a query against the relevant domain and return an observation.
+//! Each source kind has its own submodule that knows how to execute a query
+//! against the relevant domain and return an observation.
 
 mod files;
 mod rust_project;

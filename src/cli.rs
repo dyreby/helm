@@ -8,8 +8,9 @@
 //! 1. `helm observe` — run a plan, output the moment (what was observed).
 //! 2. `helm record` — attach a position to a moment, seal the bearing.
 //!
-//! `helm observe` writes the moment to a file (`--out`) or stdout. The caller decides how to
-//! handle it. `helm record` reads the moment back from a file (`--moment`) or stdin.
+//! `helm observe` writes the moment to a file (`--out`) or stdout.
+//! The caller decides how to handle it.
+//! `helm record` reads the moment back from a file (`--moment`) or stdin.
 
 use std::fs;
 use std::io::{self, Read};
@@ -50,9 +51,9 @@ pub enum Command {
 
     /// Observe the world: run a plan and output what was seen.
     ///
-    /// Pure read, no side effects, repeatable. The moment is written as JSON
-    /// to --out (if given) or stdout. A human-readable summary is printed to
-    /// stderr when writing to a file.
+    /// Pure read, no side effects, repeatable.
+    /// The moment is written as JSON to `--out` (if given) or stdout.
+    /// A human-readable summary is printed to stderr when writing to a file.
     Observe {
         #[command(subcommand)]
         source: ObserveSource,
@@ -64,8 +65,8 @@ pub enum Command {
 
     /// Record a bearing: attach a position to an observation.
     ///
-    /// Reads the moment from --moment (file) or stdin, attaches the position,
-    /// and writes the bearing to the logbook and the moment to moments.jsonl.
+    /// Reads the moment from `--moment` (file) or stdin, attaches the position,
+    /// and writes the bearing to the logbook and the moment to `moments.jsonl`.
     Record {
         /// Voyage ID (full UUID or unambiguous prefix).
         voyage: String,
@@ -81,8 +82,8 @@ pub enum Command {
 
     /// Show a voyage's logbook: the trail of bearings and actions.
     ///
-    /// Displays plans and positions for each bearing, and outcomes for
-    /// each action. The logbook tells the story through positions.
+    /// Displays plans and positions for each bearing, and outcomes for each action.
+    /// The logbook tells the story through positions.
     Log {
         /// Voyage ID (full UUID or unambiguous prefix).
         voyage: String,
@@ -368,8 +369,8 @@ fn resolve_voyage(storage: &Storage, reference: &str) -> Result<Voyage, String> 
 
 /// The full output of `helm observe`, consumed by `helm record`.
 ///
-/// Bundles the plan and moment record so `helm record` has everything
-/// it needs to seal a bearing without re-observing.
+/// Bundles the plan and moment record so `helm record` has everything it needs
+/// to seal a bearing without re-observing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ObservationOutput {
     plan: BearingPlan,
