@@ -2,11 +2,13 @@
 
 //! Bearing construction: the domain logic for taking a bearing.
 //!
-//! A bearing is built in steps: define scope, define focus, observe,
+//! A bearing is built in steps: add source queries, observe the world,
 //! then state a position. This module owns the state machine; the
 //! presentation layer (CLI, TUI) drives it with completed values.
-
-use std::path::PathBuf;
+//!
+//! Source queries are domain-specific (Files, GitHub, etc.) and are
+//! constructed by the caller. The builder doesn't know what kinds
+//! exist — it just collects and executes them.
 
 use crate::model::{Bearing, BearingPlan, Moment, Observation, Position, SourceQuery};
 use crate::observe;
@@ -18,11 +20,10 @@ pub struct BearingResult {
 
 /// Builds a bearing step by step.
 ///
-/// The flow is: add scope paths → finish scope → add focus paths →
-/// finish focus (executes observation) → set position → get bearing.
+/// The flow is: add source queries → observe (executes all queries) →
+/// set position → get bearing.
 pub struct BearingBuilder {
-    scope: Vec<PathBuf>,
-    focus: Vec<PathBuf>,
+    sources: Vec<SourceQuery>,
     moment: Option<Moment>,
     plan: Option<BearingPlan>,
     phase: Phase,
@@ -31,27 +32,23 @@ pub struct BearingBuilder {
 /// Where in the bearing construction process we are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    /// Collecting directory paths to survey.
-    Scope,
+    /// Collecting source queries that describe what to observe.
+    Planning,
 
-    /// Collecting file paths to inspect.
-    Focus,
-
-    /// Observation complete, ready to view the moment.
+    /// Observation complete, moment available for review.
     Observed,
 
-    /// Position needed.
+    /// Ready for the user to state a position.
     Position,
 }
 
 impl BearingBuilder {
     pub fn new() -> Self {
         Self {
-            scope: Vec::new(),
-            focus: Vec::new(),
+            sources: Vec::new(),
             moment: None,
             plan: None,
-            phase: Phase::Scope,
+            phase: Phase::Planning,
         }
     }
 
@@ -60,66 +57,43 @@ impl BearingBuilder {
         self.phase
     }
 
-    /// Add a directory path to survey. Only valid during the Scope phase.
-    pub fn add_scope(&mut self, path: PathBuf) {
+    /// Add a source query to the bearing plan. Only valid during Planning.
+    pub fn add_source(&mut self, query: SourceQuery) {
         assert!(
-            self.phase == Phase::Scope,
-            "add_scope called outside Scope phase"
+            self.phase == Phase::Planning,
+            "add_source called outside Planning phase"
         );
-        self.scope.push(path);
+        self.sources.push(query);
     }
 
-    /// The scope paths added so far.
-    pub fn scope(&self) -> &[PathBuf] {
-        &self.scope
+    /// The source queries added so far.
+    pub fn sources(&self) -> &[SourceQuery] {
+        &self.sources
     }
 
-    /// Finish adding scope paths and move to the Focus phase.
-    /// Requires at least one scope path.
-    pub fn finish_scope(&mut self) -> Result<(), &'static str> {
-        if self.scope.is_empty() {
-            return Err("at least one scope path is required");
+    /// Execute all source queries and move to Observed.
+    /// Requires at least one source query.
+    pub fn observe(&mut self) -> Result<(), &'static str> {
+        assert!(
+            self.phase == Phase::Planning,
+            "observe called outside Planning phase"
+        );
+        if self.sources.is_empty() {
+            return Err("at least one source query is required");
         }
-        self.phase = Phase::Focus;
-        Ok(())
-    }
-
-    /// Add a file path to inspect. Only valid during the Focus phase.
-    pub fn add_focus(&mut self, path: PathBuf) {
-        assert!(
-            self.phase == Phase::Focus,
-            "add_focus called outside Focus phase"
-        );
-        self.focus.push(path);
-    }
-
-    /// The focus paths added so far.
-    pub fn focus(&self) -> &[PathBuf] {
-        &self.focus
-    }
-
-    /// Finish adding focus paths, execute observation, and move to Observed.
-    /// Focus can be empty (survey-only bearing).
-    pub fn finish_focus(&mut self) {
-        assert!(
-            self.phase == Phase::Focus,
-            "finish_focus called outside Focus phase"
-        );
 
         let plan = BearingPlan {
-            sources: vec![SourceQuery::Files {
-                scope: self.scope.clone(),
-                focus: self.focus.clone(),
-            }],
+            sources: self.sources.clone(),
         };
-
         let observations: Vec<Observation> = plan.sources.iter().map(observe::observe).collect();
+
         self.moment = Some(Moment { observations });
         self.plan = Some(plan);
         self.phase = Phase::Observed;
+        Ok(())
     }
 
-    /// Access the moment after observation. Only valid in Observed or Position phase.
+    /// Access the moment after observation.
     pub fn moment(&self) -> Option<&Moment> {
         self.moment.as_ref()
     }
@@ -178,14 +152,13 @@ mod tests {
         fs::write(dir.path().join("test.txt"), "hello").unwrap();
 
         let mut builder = BearingBuilder::new();
-        assert_eq!(builder.phase(), Phase::Scope);
+        assert_eq!(builder.phase(), Phase::Planning);
 
-        builder.add_scope(dir.path().to_path_buf());
-        builder.finish_scope().unwrap();
-        assert_eq!(builder.phase(), Phase::Focus);
-
-        builder.add_focus(dir.path().join("test.txt"));
-        builder.finish_focus();
+        builder.add_source(SourceQuery::Files {
+            scope: vec![dir.path().to_path_buf()],
+            focus: vec![dir.path().join("test.txt")],
+        });
+        builder.observe().unwrap();
         assert_eq!(builder.phase(), Phase::Observed);
 
         // Verify moment has data.
@@ -209,10 +182,10 @@ mod tests {
     }
 
     #[test]
-    fn empty_scope_is_rejected() {
+    fn no_sources_is_rejected() {
         let mut builder = BearingBuilder::new();
-        let err = builder.finish_scope().unwrap_err();
-        assert_eq!(err, "at least one scope path is required");
+        let err = builder.observe().unwrap_err();
+        assert_eq!(err, "at least one source query is required");
     }
 
     #[test]
@@ -220,9 +193,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut builder = BearingBuilder::new();
 
-        builder.add_scope(dir.path().to_path_buf());
-        builder.finish_scope().unwrap();
-        builder.finish_focus();
+        builder.add_source(SourceQuery::Files {
+            scope: vec![dir.path().to_path_buf()],
+            focus: vec![],
+        });
+        builder.observe().unwrap();
         builder.acknowledge_moment();
 
         let err = builder.set_position("  ".to_string()).unwrap_err();
@@ -230,13 +205,15 @@ mod tests {
     }
 
     #[test]
-    fn focus_is_optional() {
+    fn survey_only_bearing() {
         let dir = TempDir::new().unwrap();
         let mut builder = BearingBuilder::new();
 
-        builder.add_scope(dir.path().to_path_buf());
-        builder.finish_scope().unwrap();
-        builder.finish_focus(); // No focus paths added.
+        builder.add_source(SourceQuery::Files {
+            scope: vec![dir.path().to_path_buf()],
+            focus: vec![],
+        });
+        builder.observe().unwrap();
         builder.acknowledge_moment();
 
         let bearing = builder.set_position("Survey only.".to_string()).unwrap();
