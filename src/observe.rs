@@ -4,8 +4,10 @@
 //! a query against the relevant domain and return an observation.
 
 mod files;
+mod rust_project;
 
 pub use files::observe_files;
+pub use rust_project::observe_rust_project;
 
 use crate::model::{Observation, SourceQuery};
 
@@ -15,5 +17,6 @@ use crate::model::{Observation, SourceQuery};
 pub fn observe(query: &SourceQuery) -> Observation {
     match query {
         SourceQuery::Files { scope, focus } => observe_files(scope, focus),
+        SourceQuery::RustProject { root } => observe_rust_project(root),
     }
 }
