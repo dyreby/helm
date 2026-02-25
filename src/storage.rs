@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Local persistence for voyages and logbooks.
 //!
 //! Each voyage lives in its own directory under the storage root:
