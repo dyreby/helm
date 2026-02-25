@@ -174,5 +174,5 @@ Names that drive the design.
 ## What This Document Is Not
 
 - **Not an implementation plan.** The types and flows described here are the conceptual architecture. Implementation will emerge through building Helm with Helm.
-- **Not a general framework.** Helm is shaped by how I think. Others may find it interesting; that's a side effect, not a goal.
+- **Not a general framework.** Helm is shaped by how I think. If any of it is useful to you, that's wonderful.
 - **Not an autonomous agent.** The agent never drives. It advises within hard constraints. The helm waits for me.
