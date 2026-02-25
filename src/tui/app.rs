@@ -48,9 +48,8 @@ fn event_loop(terminal: &mut DefaultTerminal, storage: &Storage) -> io::Result<(
                         if let Some(action) = home.select() {
                             match action {
                                 HomeAction::OpenVoyage(id) => {
-                                    let voyage = storage
-                                        .load_voyage(id)
-                                        .map_err(io::Error::other)?;
+                                    let voyage =
+                                        storage.load_voyage(id).map_err(io::Error::other)?;
                                     screen = Screen::Voyage(VoyageScreen::new(voyage));
                                 }
                                 HomeAction::NewOpenWaters => {
@@ -61,9 +60,7 @@ fn event_loop(terminal: &mut DefaultTerminal, storage: &Storage) -> io::Result<(
                                         created_at: jiff::Timestamp::now(),
                                         status: VoyageStatus::Active,
                                     };
-                                    storage
-                                        .create_voyage(&voyage)
-                                        .map_err(io::Error::other)?;
+                                    storage.create_voyage(&voyage).map_err(io::Error::other)?;
                                     screen = Screen::Voyage(VoyageScreen::new(voyage));
                                 }
                             }

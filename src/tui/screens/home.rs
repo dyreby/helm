@@ -1,10 +1,10 @@
 //! Home screen: active voyages and new voyage option.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, Padding, Paragraph};
-use ratatui::Frame;
 
 use crate::model::{Voyage, VoyageStatus};
 use crate::tui::app::HomeAction;
@@ -51,7 +51,7 @@ impl HomeScreen {
 
         let chunks = Layout::vertical([
             Constraint::Length(3), // title
-            Constraint::Min(0),   // list
+            Constraint::Min(0),    // list
             Constraint::Length(1), // help
         ])
         .split(area);
@@ -111,8 +111,7 @@ impl HomeScreen {
             })
             .collect();
 
-        let list = List::new(list_items)
-            .block(Block::default().padding(Padding::new(2, 2, 0, 0)));
+        let list = List::new(list_items).block(Block::default().padding(Padding::new(2, 2, 0, 0)));
         frame.render_widget(list, chunks[1]);
 
         // Help line.

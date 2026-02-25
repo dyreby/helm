@@ -1,10 +1,10 @@
 //! Voyage screen: core loop menu.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, Padding, Paragraph};
-use ratatui::Frame;
 
 use crate::model::Voyage;
 
@@ -50,7 +50,7 @@ impl VoyageScreen {
         let chunks = Layout::vertical([
             Constraint::Length(3), // header
             Constraint::Length(1), // separator
-            Constraint::Min(0),   // menu
+            Constraint::Min(0),    // menu
             Constraint::Length(1), // help
         ])
         .split(area);
@@ -67,10 +67,8 @@ impl VoyageScreen {
         } else {
             self.voyage.intent.clone()
         };
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(&label, highlight),
-        ]))
-        .block(Block::default().padding(Padding::new(2, 0, 1, 0)));
+        let header = Paragraph::new(Line::from(vec![Span::styled(&label, highlight)]))
+            .block(Block::default().padding(Padding::new(2, 0, 1, 0)));
         frame.render_widget(header, chunks[0]);
 
         // Thin separator.
@@ -99,8 +97,7 @@ impl VoyageScreen {
             })
             .collect();
 
-        let menu = List::new(items)
-            .block(Block::default().padding(Padding::new(2, 2, 1, 0)));
+        let menu = List::new(items).block(Block::default().padding(Padding::new(2, 2, 1, 0)));
         frame.render_widget(menu, chunks[2]);
 
         // Help line.
