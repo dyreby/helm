@@ -102,7 +102,7 @@ Voyages can be paused and resumed. When I return, the world may have changed. I 
 Logbook data lives locally on each machine. It is not committed to the repo, not synced across devices, and not shared with the agent beyond what's explicitly included in the current bearing.
 
 Bearings persist as two layers:
-- **Records** (always): plan + world stamps + position + delta summary
+- **Records** (always): plan + change markers + position + delta summary
 - **Moments** (recent): raw observed payloads, kept for recent bearings
 
 ## Source Kinds
@@ -153,7 +153,7 @@ Names that drive the design.
 | **Logbook** | Append-only voyage history |
 | **Bearing** | Immutable record: plan + moment + position |
 | **BearingPlan** | What to observe, at what scope/focus |
-| **Moment** | Captured observed data + world stamps |
+| **Moment** | What was observed, with enough metadata to detect change from a previous bearing |
 | **Position** | Short text statement of world state (agent-generated) |
 | **ActionPlan** | Intent to affect the world |
 | **ActionReport** | Outcome of action, contains its plan |
