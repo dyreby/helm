@@ -341,3 +341,147 @@ fn format_inspections(lines: &mut Vec<String>, inspections: &[FileInspection]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::fs;
+    use std::path::PathBuf;
+
+    use tempfile::TempDir;
+
+    use crate::model::Observation;
+
+    fn type_str(flow: &mut BearingFlow, s: &str) {
+        for c in s.chars() {
+            flow.on_char(c);
+        }
+    }
+
+    #[test]
+    fn full_flow_produces_bearing() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("test.txt"), "hello").unwrap();
+
+        let mut flow = BearingFlow::new();
+
+        // Scope step: add directory, then empty line to continue.
+        type_str(&mut flow, &dir.path().display().to_string());
+        assert!(flow.on_enter().is_none());
+        // Empty line to move to focus.
+        assert!(flow.on_enter().is_none());
+
+        // Focus step: add file, then empty line to execute.
+        type_str(
+            &mut flow,
+            &dir.path().join("test.txt").display().to_string(),
+        );
+        assert!(flow.on_enter().is_none());
+        // Empty line to execute observation.
+        assert!(flow.on_enter().is_none());
+
+        // ViewMoment step: press enter to continue.
+        assert!(flow.on_enter().is_none());
+
+        // EnterPosition step: type position.
+        type_str(&mut flow, "Directory has one test file.");
+        let result = flow.on_enter();
+
+        assert!(result.is_some());
+        let bearing = result.unwrap().bearing;
+        assert_eq!(bearing.position.text, "Directory has one test file.");
+        assert_eq!(bearing.plan.sources.len(), 1);
+
+        // Verify the observation contains both survey and inspection.
+        match &bearing.moment.observations[0] {
+            Observation::Files {
+                survey,
+                inspections,
+            } => {
+                assert_eq!(survey.len(), 1);
+                assert_eq!(inspections.len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn empty_scope_is_rejected() {
+        let mut flow = BearingFlow::new();
+        // Empty enter on scope step with no paths added.
+        assert!(flow.on_enter().is_none());
+        // Still on scope step — verify by adding a path (should work).
+        type_str(&mut flow, "/tmp");
+        assert!(flow.on_enter().is_none()); // Adds path, stays on scope.
+    }
+
+    #[test]
+    fn empty_position_is_rejected() {
+        let dir = TempDir::new().unwrap();
+        let mut flow = BearingFlow::new();
+
+        // Get through to position step.
+        type_str(&mut flow, &dir.path().display().to_string());
+        flow.on_enter(); // add scope
+        flow.on_enter(); // empty → move to focus
+        flow.on_enter(); // empty → execute, move to moment
+        flow.on_enter(); // move to position
+
+        // Empty position rejected.
+        assert!(flow.on_enter().is_none());
+    }
+
+    #[test]
+    fn focus_is_optional() {
+        let dir = TempDir::new().unwrap();
+        let mut flow = BearingFlow::new();
+
+        type_str(&mut flow, &dir.path().display().to_string());
+        flow.on_enter(); // add scope
+        flow.on_enter(); // empty → move to focus
+        flow.on_enter(); // empty → execute (no focus), move to moment
+        flow.on_enter(); // move to position
+
+        type_str(&mut flow, "Empty survey.");
+        let result = flow.on_enter();
+        assert!(result.is_some());
+
+        match &result.unwrap().bearing.moment.observations[0] {
+            Observation::Files { inspections, .. } => {
+                assert!(inspections.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn format_moment_survey_and_inspection() {
+        let moment = Moment {
+            observations: vec![Observation::Files {
+                survey: vec![DirectorySurvey {
+                    path: PathBuf::from("src/"),
+                    entries: vec![
+                        crate::model::DirectoryEntry {
+                            name: "main.rs".to_string(),
+                            is_dir: false,
+                            size_bytes: Some(100),
+                        },
+                        crate::model::DirectoryEntry {
+                            name: "lib".to_string(),
+                            is_dir: true,
+                            size_bytes: None,
+                        },
+                    ],
+                }],
+                inspections: vec![FileInspection {
+                    path: PathBuf::from("src/main.rs"),
+                    content: FileContent::Text("fn main() {}".to_string()),
+                }],
+            }],
+        };
+
+        let lines = format_moment(&moment);
+        assert!(lines.iter().any(|l| l.contains("src/:")));
+        assert!(lines.iter().any(|l| l.contains("main.rs")));
+        assert!(lines.iter().any(|l| l.contains("fn main()")));
+    }
+}
