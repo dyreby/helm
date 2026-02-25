@@ -3,8 +3,7 @@
 //! Survey lists directory contents with metadata.
 //! Inspect reads file contents, distinguishing text from binary.
 
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
 use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation};
 
@@ -89,14 +88,10 @@ fn inspect_file(path: &Path) -> FileInspection {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
-
-    use tempfile::TempDir;
-
     use super::*;
     use crate::model::{FileContent, Observation};
+    use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
+    use tempfile::TempDir;
 
     /// Helper: create a temp directory with some files.
     fn setup_test_dir() -> TempDir {

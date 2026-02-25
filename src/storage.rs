@@ -10,9 +10,11 @@
 //!   logbook.jsonl    # Append-only logbook entries, one JSON object per line
 //! ```
 
-use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::{
+    fs::{self, OpenOptions},
+    io::{BufRead, BufReader, Write},
+    path::PathBuf,
+};
 
 use uuid::Uuid;
 
