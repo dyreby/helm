@@ -15,7 +15,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -39,6 +39,10 @@ pub enum Command {
     New {
         /// What this voyage is about.
         intent: String,
+
+        /// The kind of voyage.
+        #[arg(long, value_enum, default_value_t = VoyageKindArg::OpenWaters)]
+        kind: VoyageKindArg,
     },
 
     /// List active voyages.
@@ -85,6 +89,25 @@ pub enum Command {
     },
 }
 
+/// CLI-facing voyage kind, mapped to the domain `VoyageKind`.
+#[derive(Debug, Clone, ValueEnum)]
+pub enum VoyageKindArg {
+    /// General-purpose voyage.
+    OpenWaters,
+
+    /// Resolve a GitHub issue.
+    ResolveIssue,
+}
+
+impl VoyageKindArg {
+    fn to_domain(&self) -> VoyageKind {
+        match self {
+            Self::OpenWaters => VoyageKind::OpenWaters,
+            Self::ResolveIssue => VoyageKind::ResolveIssue,
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum ObserveSource {
     /// Observe a Rust project: full directory tree and documentation.
@@ -110,7 +133,7 @@ pub fn run(storage: &Storage) -> Result<(), String> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::New { intent } => cmd_new(storage, &intent),
+        Command::New { intent, kind } => cmd_new(storage, &intent, &kind),
         Command::List => cmd_list(storage),
         Command::Observe { ref source, out } => cmd_observe(source, out),
         Command::Record {
@@ -122,10 +145,10 @@ pub fn run(storage: &Storage) -> Result<(), String> {
     }
 }
 
-fn cmd_new(storage: &Storage, intent: &str) -> Result<(), String> {
+fn cmd_new(storage: &Storage, intent: &str, kind: &VoyageKindArg) -> Result<(), String> {
     let voyage = Voyage {
         id: Uuid::new_v4(),
-        kind: VoyageKind::OpenWaters,
+        kind: kind.to_domain(),
         intent: intent.to_string(),
         created_at: jiff::Timestamp::now(),
         status: VoyageStatus::Active,
@@ -155,8 +178,12 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
             VoyageStatus::Paused => "paused",
             VoyageStatus::Completed => "completed",
         };
+        let kind = match v.kind {
+            VoyageKind::OpenWaters => "open-waters",
+            VoyageKind::ResolveIssue => "resolve-issue",
+        };
         let short_id = &v.id.to_string()[..8];
-        println!("{short_id}  [{status}]  {}", v.intent);
+        println!("{short_id}  [{status}] [{kind}]  {}", v.intent);
     }
 
     Ok(())
