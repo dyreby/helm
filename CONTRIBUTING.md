@@ -40,4 +40,5 @@ More voyage types will be added as helm grows. When they are, corresponding miss
 
 ### Getting Started
 
-Run `helm --help` for CLI documentation. That's all you need to start working a mission.
+Run `helm --help`. That should be all you need to start working a mission.
+If it's not, open an issue and I'll improve the tool.
