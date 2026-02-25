@@ -2,138 +2,39 @@
 
 //! Bearing construction: the domain logic for taking a bearing.
 //!
-//! A bearing is built in steps: add source queries, observe the world,
-//! then state a position. This module owns the state machine; the
-//! presentation layer (CLI, TUI) drives it with completed values.
-//!
-//! Source queries are domain-specific (Files, GitHub, etc.) and are
-//! constructed by the caller. The builder doesn't know what kinds
-//! exist — it just collects and executes them.
+//! A bearing is the record of a single observation: what was planned,
+//! what was seen, and what it means. The plan is constructed by the
+//! caller (with or without LLM assistance), and this module handles
+//! execution and assembly.
 
-use crate::model::{Bearing, BearingPlan, Moment, Observation, Position, SourceQuery};
+use crate::model::{Bearing, BearingPlan, Moment, Observation, Position};
 use crate::observe;
 
-/// The result of completing a bearing flow.
-pub struct BearingResult {
-    pub bearing: Bearing,
-}
-
-/// Builds a bearing step by step.
+/// Execute a bearing plan and assemble the bearing with the given position.
 ///
-/// The flow is: add source queries → observe (executes all queries) →
-/// set position → get bearing.
-pub struct BearingBuilder {
-    sources: Vec<SourceQuery>,
-    moment: Option<Moment>,
-    plan: Option<BearingPlan>,
-    phase: Phase,
-}
-
-/// Where in the bearing construction process we are.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Phase {
-    /// Collecting source queries that describe what to observe.
-    Planning,
-
-    /// Observation complete, moment available for review.
-    Observed,
-
-    /// Ready for the user to state a position.
-    Position,
-}
-
-impl BearingBuilder {
-    pub fn new() -> Self {
-        Self {
-            sources: Vec::new(),
-            moment: None,
-            plan: None,
-            phase: Phase::Planning,
-        }
+/// The plan describes what to observe (source queries across any domain).
+/// Each query is executed to produce observations, which form the moment.
+/// The position is a human-approved statement of what the world looks like.
+pub fn take_bearing(plan: BearingPlan, position_text: String) -> Result<Bearing, &'static str> {
+    if plan.sources.is_empty() {
+        return Err("bearing plan must have at least one source query");
+    }
+    if position_text.trim().is_empty() {
+        return Err("position text cannot be empty");
     }
 
-    /// Current phase of the builder.
-    pub fn phase(&self) -> Phase {
-        self.phase
-    }
+    let observations: Vec<Observation> = plan.sources.iter().map(observe::observe).collect();
+    let moment = Moment { observations };
 
-    /// Add a source query to the bearing plan. Only valid during Planning.
-    pub fn add_source(&mut self, query: SourceQuery) {
-        assert!(
-            self.phase == Phase::Planning,
-            "add_source called outside Planning phase"
-        );
-        self.sources.push(query);
-    }
-
-    /// The source queries added so far.
-    pub fn sources(&self) -> &[SourceQuery] {
-        &self.sources
-    }
-
-    /// Execute all source queries and move to Observed.
-    /// Requires at least one source query.
-    pub fn observe(&mut self) -> Result<(), &'static str> {
-        assert!(
-            self.phase == Phase::Planning,
-            "observe called outside Planning phase"
-        );
-        if self.sources.is_empty() {
-            return Err("at least one source query is required");
-        }
-
-        let plan = BearingPlan {
-            sources: self.sources.clone(),
-        };
-        let observations: Vec<Observation> = plan.sources.iter().map(observe::observe).collect();
-
-        self.moment = Some(Moment { observations });
-        self.plan = Some(plan);
-        self.phase = Phase::Observed;
-        Ok(())
-    }
-
-    /// Access the moment after observation.
-    pub fn moment(&self) -> Option<&Moment> {
-        self.moment.as_ref()
-    }
-
-    /// Acknowledge the moment and move to the Position phase.
-    pub fn acknowledge_moment(&mut self) {
-        assert!(
-            self.phase == Phase::Observed,
-            "acknowledge_moment called outside Observed phase"
-        );
-        self.phase = Phase::Position;
-    }
-
-    /// Set the position text and produce the completed bearing.
-    pub fn set_position(mut self, text: String) -> Result<Bearing, &'static str> {
-        assert!(
-            self.phase == Phase::Position,
-            "set_position called outside Position phase"
-        );
-
-        if text.trim().is_empty() {
-            return Err("position text cannot be empty");
-        }
-
-        Ok(Bearing {
-            plan: self
-                .plan
-                .take()
-                .expect("plan should exist after observation"),
-            moment: self
-                .moment
-                .take()
-                .expect("moment should exist after observation"),
-            position: Position {
-                text,
-                history: Vec::new(),
-            },
-            taken_at: jiff::Timestamp::now(),
-        })
-    }
+    Ok(Bearing {
+        plan,
+        moment,
+        position: Position {
+            text: position_text,
+            history: Vec::new(),
+        },
+        taken_at: jiff::Timestamp::now(),
+    })
 }
 
 #[cfg(test)]
@@ -144,26 +45,25 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::model::Observation;
+    use crate::model::{Observation, SourceQuery};
 
     #[test]
-    fn full_flow_produces_bearing() {
+    fn takes_bearing_with_survey_and_inspection() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("test.txt"), "hello").unwrap();
 
-        let mut builder = BearingBuilder::new();
-        assert_eq!(builder.phase(), Phase::Planning);
+        let plan = BearingPlan {
+            sources: vec![SourceQuery::Files {
+                scope: vec![dir.path().to_path_buf()],
+                focus: vec![dir.path().join("test.txt")],
+            }],
+        };
 
-        builder.add_source(SourceQuery::Files {
-            scope: vec![dir.path().to_path_buf()],
-            focus: vec![dir.path().join("test.txt")],
-        });
-        builder.observe().unwrap();
-        assert_eq!(builder.phase(), Phase::Observed);
+        let bearing = take_bearing(plan, "One test file.".to_string()).unwrap();
+        assert_eq!(bearing.position.text, "One test file.");
+        assert_eq!(bearing.plan.sources.len(), 1);
 
-        // Verify moment has data.
-        let moment = builder.moment().unwrap();
-        match &moment.observations[0] {
+        match &bearing.moment.observations[0] {
             Observation::Files {
                 survey,
                 inspections,
@@ -172,51 +72,39 @@ mod tests {
                 assert_eq!(inspections.len(), 1);
             }
         }
-
-        builder.acknowledge_moment();
-        assert_eq!(builder.phase(), Phase::Position);
-
-        let bearing = builder.set_position("One test file.".to_string()).unwrap();
-        assert_eq!(bearing.position.text, "One test file.");
-        assert_eq!(bearing.plan.sources.len(), 1);
     }
 
     #[test]
-    fn no_sources_is_rejected() {
-        let mut builder = BearingBuilder::new();
-        let err = builder.observe().unwrap_err();
-        assert_eq!(err, "at least one source query is required");
+    fn rejects_empty_plan() {
+        let plan = BearingPlan { sources: vec![] };
+        let err = take_bearing(plan, "Something.".to_string()).unwrap_err();
+        assert_eq!(err, "bearing plan must have at least one source query");
     }
 
     #[test]
-    fn empty_position_is_rejected() {
+    fn rejects_empty_position() {
         let dir = TempDir::new().unwrap();
-        let mut builder = BearingBuilder::new();
-
-        builder.add_source(SourceQuery::Files {
-            scope: vec![dir.path().to_path_buf()],
-            focus: vec![],
-        });
-        builder.observe().unwrap();
-        builder.acknowledge_moment();
-
-        let err = builder.set_position("  ".to_string()).unwrap_err();
+        let plan = BearingPlan {
+            sources: vec![SourceQuery::Files {
+                scope: vec![dir.path().to_path_buf()],
+                focus: vec![],
+            }],
+        };
+        let err = take_bearing(plan, "  ".to_string()).unwrap_err();
         assert_eq!(err, "position text cannot be empty");
     }
 
     #[test]
     fn survey_only_bearing() {
         let dir = TempDir::new().unwrap();
-        let mut builder = BearingBuilder::new();
+        let plan = BearingPlan {
+            sources: vec![SourceQuery::Files {
+                scope: vec![dir.path().to_path_buf()],
+                focus: vec![],
+            }],
+        };
 
-        builder.add_source(SourceQuery::Files {
-            scope: vec![dir.path().to_path_buf()],
-            focus: vec![],
-        });
-        builder.observe().unwrap();
-        builder.acknowledge_moment();
-
-        let bearing = builder.set_position("Survey only.".to_string()).unwrap();
+        let bearing = take_bearing(plan, "Survey only.".to_string()).unwrap();
         match &bearing.moment.observations[0] {
             Observation::Files { inspections, .. } => {
                 assert!(inspections.is_empty());
