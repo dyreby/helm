@@ -1,6 +1,6 @@
 ---
 name: Message in a bottle
-description: Something's off, something's missing, or something's on your mind.
+description: Something's off, something's missing, or something's on your mind
 ---
 
 ## Why
