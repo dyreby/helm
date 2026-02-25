@@ -3,8 +3,7 @@
 //! Survey lists directory contents with metadata.
 //! Inspect reads file contents, distinguishing text from binary.
 
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
 use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation};
 

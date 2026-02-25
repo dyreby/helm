@@ -12,9 +12,11 @@
 //!     <bearing-id>.json
 //! ```
 
-use std::fs::{self, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, BufRead, BufReader, Write},
+    path::PathBuf,
+};
 
 use uuid::Uuid;
 

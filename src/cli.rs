@@ -12,9 +12,11 @@
 //! The caller decides how to handle it.
 //! `helm record` reads the moment back from a file (`--moment`) or stdin.
 
-use std::fs;
-use std::io::{self, Read};
-use std::path::PathBuf;
+use std::{
+    fs,
+    io::{self, Read},
+    path::PathBuf,
+};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};

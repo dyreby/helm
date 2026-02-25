@@ -4,9 +4,11 @@
 //! Produces a full directory tree (survey) and inspects documentation files.
 //! Source code is not inspected — that's what `Files` is for on subsequent bearings.
 
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use ignore::WalkBuilder;
 
