@@ -19,6 +19,13 @@ pub enum SourceQuery {
         scope: Vec<PathBuf>,
         focus: Vec<PathBuf>,
     },
+
+    /// A Rust project rooted at a directory.
+    ///
+    /// Walks the project tree, respects `.gitignore`, skips `target/`.
+    /// Survey: full directory tree with metadata.
+    /// Focus: all source files (everything that isn't binary or ignored).
+    RustProject { root: PathBuf },
 }
 
 /// What was observed when a bearing was taken.
