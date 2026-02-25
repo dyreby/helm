@@ -1,0 +1,35 @@
+//! Voyage types: the unit of work in Helm.
+
+use jiff::Timestamp;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// A unit of work with intent, logbook, and outcome.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Voyage {
+    pub id: Uuid,
+    pub kind: VoyageKind,
+    pub intent: String,
+    pub created_at: Timestamp,
+    pub status: VoyageStatus,
+}
+
+/// The kind of voyage, which frames the first bearing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoyageKind {
+    /// Unscoped, general-purpose voyage. No prescribed framing.
+    OpenWaters,
+}
+
+/// Where a voyage stands in its lifecycle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoyageStatus {
+    /// Work is in progress.
+    Active,
+
+    /// Paused, can be resumed. The world may have changed.
+    Paused,
+
+    /// Completed with an outcome.
+    Completed,
+}
