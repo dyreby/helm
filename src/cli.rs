@@ -29,11 +29,33 @@ use crate::storage::Storage;
 
 /// Helm — navigate your work.
 #[derive(Debug, Parser)]
-#[command(name = "helm")]
+#[command(name = "helm", after_long_help = WORKFLOW_HELP)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
+
+const WORKFLOW_HELP: &str = "\
+Tip: observe without --out prints to stdout instead of writing a file.
+Use it as a spyglass — quick looks when you want to check something before committing to a bearing.
+
+Workflow — resolving an issue:
+
+  1. Create a voyage. The printed ID is used in every step below:
+     helm new --kind resolve-issue \"Fix the broken widget (#42)\"
+
+  2. Take a bearing — observe the world, then record your read:
+     helm observe rust-project --out moment.json .
+     helm record <voyage-id> --moment moment.json \"The widget module has a typo on line 12\"
+
+  3. Do the work. Repeat step 2 as your understanding evolves.
+
+  4. Review the journey so far:
+     helm log <voyage-id>
+
+Voyages don't close yet — the logbook is the record.
+
+More voyage types and workflows are on the horizon.";
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
