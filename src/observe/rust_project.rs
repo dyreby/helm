@@ -1,7 +1,9 @@
-//! Rust project source kind: full project observation.
+//! Rust project source kind: project structure and documentation.
 //!
 //! Walks a Rust project tree, respects `.gitignore`, skips `target/`.
-//! Produces a tree-structured survey and inspects all source files.
+//! Produces a full directory tree (survey) and inspects documentation
+//! files. Source code is not inspected — that's what `Files` is for
+//! on subsequent bearings.
 
 use std::path::Path;
 
@@ -9,26 +11,68 @@ use ignore::WalkBuilder;
 
 use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation};
 
-/// Observe a Rust project: walk the tree, survey all directories,
-/// inspect all files.
+/// Well-known documentation file names (case-insensitive matching).
+const DOC_NAMES: &[&str] = &[
+    "readme",
+    "readme.md",
+    "changelog",
+    "changelog.md",
+    "vision.md",
+    "contributing",
+    "contributing.md",
+    "license",
+    "license.md",
+    "license-mit",
+    "license-apache",
+];
+
+/// Returns true if a file is a documentation file.
 ///
-/// Uses the `ignore` crate to respect `.gitignore` and adds an
-/// explicit skip for `target/`. Files that aren't valid UTF-8 are
-/// recorded as binary rather than skipped.
+/// Matches well-known doc names (case-insensitive) and any `.md` file
+/// in the project root or a `docs/` directory.
+fn is_doc_file(path: &Path, root: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+
+    // Well-known doc names anywhere in the tree.
+    if DOC_NAMES.iter().any(|d| name.eq_ignore_ascii_case(d)) {
+        return true;
+    }
+
+    // Any .md file in the project root or docs/.
+    let is_md = Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+
+    if is_md
+        && let Some(parent) = path.parent()
+        && (parent == root
+            || parent
+                .file_name()
+                .is_some_and(|n| n.eq_ignore_ascii_case("docs")))
+    {
+        return true;
+    }
+
+    false
+}
+
+/// Observe a Rust project: full directory tree and all documentation.
+///
+/// Uses the `ignore` crate to respect `.gitignore` and skips `target/`.
+/// The tree gives structure; docs give intent and context. Source files
+/// are left for targeted `Files` queries on subsequent bearings.
 pub fn observe_rust_project(root: &Path) -> Observation {
-    let mut surveys: Vec<DirectorySurvey> = Vec::new();
-    let mut inspections: Vec<FileInspection> = Vec::new();
     let mut dir_entries: std::collections::BTreeMap<std::path::PathBuf, Vec<DirectoryEntry>> =
         std::collections::BTreeMap::new();
+    let mut inspections: Vec<FileInspection> = Vec::new();
 
     let walker = WalkBuilder::new(root)
         .hidden(false) // Show dotfiles (like .github/).
         .filter_entry(|entry| {
             // Skip target/ at any level.
-            if entry.file_type().is_some_and(|ft| ft.is_dir()) && entry.file_name() == "target" {
-                return false;
-            }
-            true
+            !(entry.file_type().is_some_and(|ft| ft.is_dir()) && entry.file_name() == "target")
         })
         .sort_by_file_name(std::cmp::Ord::cmp)
         .build();
@@ -36,7 +80,6 @@ pub fn observe_rust_project(root: &Path) -> Observation {
     for entry in walker.flatten() {
         let path = entry.path();
 
-        // Skip the root itself.
         if path == root {
             continue;
         }
@@ -61,8 +104,8 @@ pub fn observe_rust_project(root: &Path) -> Observation {
                 .push(dir_entry);
         }
 
-        // Inspect files.
-        if !is_dir {
+        // Inspect documentation files only.
+        if !is_dir && is_doc_file(path, root) {
             let content = match std::fs::read(path) {
                 Ok(bytes) => match String::from_utf8(bytes) {
                     Ok(text) => FileContent::Text(text),
@@ -79,10 +122,10 @@ pub fn observe_rust_project(root: &Path) -> Observation {
         }
     }
 
-    // Convert collected directory entries into surveys.
-    for (path, entries) in dir_entries {
-        surveys.push(DirectorySurvey { path, entries });
-    }
+    let surveys = dir_entries
+        .into_iter()
+        .map(|(path, entries)| DirectorySurvey { path, entries })
+        .collect();
 
     Observation::Files {
         survey: surveys,
@@ -98,45 +141,43 @@ mod tests {
 
     use tempfile::TempDir;
 
-    /// Create a minimal Rust project structure.
+    /// Create a Rust project with docs and source files.
     fn setup_rust_project() -> TempDir {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
 
-        // Cargo.toml
         fs::write(
             root.join("Cargo.toml"),
-            "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+            "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
         )
         .unwrap();
+        fs::write(root.join("README.md"), "# Test Project").unwrap();
+        fs::write(root.join("VISION.md"), "# Vision").unwrap();
 
-        // src/
+        fs::create_dir(root.join("docs")).unwrap();
+        fs::write(root.join("docs/design.md"), "# Design doc").unwrap();
+
         fs::create_dir(root.join("src")).unwrap();
         fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
         fs::write(root.join("src/lib.rs"), "pub fn hello() {}").unwrap();
 
-        // target/ (should be skipped)
         fs::create_dir(root.join("target")).unwrap();
         fs::write(root.join("target/debug.txt"), "build artifact").unwrap();
 
-        // .gitignore
         fs::write(root.join(".gitignore"), "/target\n").unwrap();
 
         dir
     }
 
     #[test]
-    fn observes_project_structure() {
+    fn tree_includes_all_non_ignored_entries() {
         let dir = setup_rust_project();
         let Observation::Files {
             survey,
             inspections: _,
         } = observe_rust_project(dir.path());
 
-        // Should have surveys for root and src/.
-        assert!(survey.len() >= 2);
-
-        // Root survey should contain Cargo.toml, src/, .gitignore but not target/.
+        // Root should have src/, docs/, Cargo.toml, README.md, etc. but not target/.
         let root_survey = survey.iter().find(|s| s.path == dir.path()).unwrap();
         let names: Vec<&str> = root_survey
             .entries
@@ -145,12 +186,13 @@ mod tests {
             .collect();
         assert!(names.contains(&"Cargo.toml"));
         assert!(names.contains(&"src"));
-        assert!(names.contains(&".gitignore"));
+        assert!(names.contains(&"docs"));
+        assert!(names.contains(&"README.md"));
         assert!(!names.contains(&"target"));
     }
 
     #[test]
-    fn inspects_all_source_files() {
+    fn inspects_only_docs() {
         let dir = setup_rust_project();
         let Observation::Files { inspections, .. } = observe_rust_project(dir.path());
 
@@ -165,13 +207,15 @@ mod tests {
             })
             .collect();
 
-        assert!(paths.contains(&"Cargo.toml".to_string()));
-        assert!(paths.contains(&"src/main.rs".to_string()));
-        assert!(paths.contains(&"src/lib.rs".to_string()));
-        assert!(paths.contains(&".gitignore".to_string()));
+        // Docs are inspected.
+        assert!(paths.contains(&"README.md".to_string()));
+        assert!(paths.contains(&"VISION.md".to_string()));
+        assert!(paths.contains(&"docs/design.md".to_string()));
 
-        // target/ contents should not be inspected.
-        assert!(!paths.iter().any(|p| p.starts_with("target")));
+        // Source files are not.
+        assert!(!paths.contains(&"src/main.rs".to_string()));
+        assert!(!paths.contains(&"src/lib.rs".to_string()));
+        assert!(!paths.contains(&"Cargo.toml".to_string()));
     }
 
     #[test]
@@ -182,10 +226,7 @@ mod tests {
             inspections,
         } = observe_rust_project(dir.path());
 
-        // No survey for target/.
         assert!(!survey.iter().any(|s| s.path.ends_with("target")));
-
-        // No inspections under target/.
         assert!(!inspections.iter().any(|i| {
             i.path
                 .strip_prefix(dir.path())
@@ -195,14 +236,20 @@ mod tests {
     }
 
     #[test]
-    fn handles_binary_files() {
+    fn tree_includes_nested_structure() {
         let dir = setup_rust_project();
-        let binary_path = dir.path().join("image.bin");
-        fs::write(&binary_path, [0xFF, 0xFE, 0x00]).unwrap();
+        let Observation::Files {
+            survey,
+            inspections: _,
+        } = observe_rust_project(dir.path());
 
-        let Observation::Files { inspections, .. } = observe_rust_project(dir.path());
-
-        let binary = inspections.iter().find(|i| i.path == binary_path).unwrap();
-        assert!(matches!(binary.content, FileContent::Binary { .. }));
+        // src/ directory should have its own survey.
+        let src_survey = survey
+            .iter()
+            .find(|s| s.path == dir.path().join("src"))
+            .unwrap();
+        let names: Vec<&str> = src_survey.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"main.rs"));
+        assert!(names.contains(&"lib.rs"));
     }
 }
