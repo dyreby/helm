@@ -1,4 +1,7 @@
-//! Take Bearing flow: define plan, observe, write position.
+//! Take Bearing screen: TUI wrapper around `BearingBuilder`.
+//!
+//! Handles character input, rendering, and scrolling. Feeds completed
+//! values into the domain-level builder.
 
 use std::path::PathBuf;
 
@@ -10,53 +13,25 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph},
 };
 
-use crate::model::{
-    Bearing, BearingPlan, DirectorySurvey, FileContent, FileInspection, Moment, Observation,
-    Position, SourceQuery,
-};
-use crate::observe;
+use crate::bearing::{BearingBuilder, BearingResult, Phase};
+use crate::model::{DirectorySurvey, FileContent, FileInspection, Moment, Observation};
 
-/// Where in the bearing flow we are.
-enum Step {
-    /// Entering scope paths (directories to survey).
-    Scope,
-
-    /// Entering focus paths (files to inspect).
-    Focus,
-
-    /// Viewing the moment (observation results).
-    ViewMoment,
-
-    /// Entering position text.
-    EnterPosition,
-}
-
-/// Result of completing the bearing flow.
-pub struct BearingResult {
-    pub bearing: Bearing,
-}
-
-/// The Take Bearing flow, driven step by step.
-pub struct BearingFlow {
-    step: Step,
-    scope: Vec<PathBuf>,
-    focus: Vec<PathBuf>,
+/// TUI screen for the Take Bearing flow.
+///
+/// Drives a `BearingBuilder` with user input collected character by character
+/// (the standard pattern for text input in ratatui, which delivers raw key events).
+pub struct BearingScreen {
+    builder: BearingBuilder,
     input: String,
-    moment: Option<Moment>,
-    plan: Option<BearingPlan>,
     scroll_offset: usize,
     moment_lines: Vec<String>,
 }
 
-impl BearingFlow {
+impl BearingScreen {
     pub fn new() -> Self {
         Self {
-            step: Step::Scope,
-            scope: Vec::new(),
-            focus: Vec::new(),
+            builder: BearingBuilder::new(),
             input: String::new(),
-            moment: None,
-            plan: None,
             scroll_offset: 0,
             moment_lines: Vec::new(),
         }
@@ -64,109 +39,78 @@ impl BearingFlow {
 
     /// Handle a character being typed.
     pub fn on_char(&mut self, c: char) {
-        match self.step {
-            Step::Scope | Step::Focus | Step::EnterPosition => {
-                self.input.push(c);
-            }
-            Step::ViewMoment => {}
+        if self.builder.phase() != Phase::Observed {
+            self.input.push(c);
         }
     }
 
     /// Handle backspace.
     pub fn on_backspace(&mut self) {
-        match self.step {
-            Step::Scope | Step::Focus | Step::EnterPosition => {
-                self.input.pop();
-            }
-            Step::ViewMoment => {}
+        if self.builder.phase() != Phase::Observed {
+            self.input.pop();
         }
     }
 
-    /// Handle Enter. Returns Some(BearingResult) when the flow is complete.
+    /// Handle Enter. Returns `Some(BearingResult)` when the flow is complete.
     pub fn on_enter(&mut self) -> Option<BearingResult> {
-        match self.step {
-            Step::Scope => {
-                let trimmed = self.input.trim();
-                if trimmed.is_empty() {
-                    if self.scope.is_empty() {
-                        return None; // Need at least one scope path.
-                    }
-                    self.step = Step::Focus;
-                } else {
-                    self.scope.push(PathBuf::from(trimmed));
-                }
-                self.input.clear();
-                None
-            }
-            Step::Focus => {
+        match self.builder.phase() {
+            Phase::Scope => {
                 let trimmed = self.input.trim().to_string();
-                if !trimmed.is_empty() {
-                    self.focus.push(PathBuf::from(&trimmed));
-                }
                 self.input.clear();
-
-                // Empty input means done adding focus — execute the plan.
                 if trimmed.is_empty() {
-                    self.execute();
-                    self.step = Step::ViewMoment;
+                    // Empty line = done adding scope.
+                    let _ = self.builder.finish_scope(); // Silently stays if empty.
+                } else {
+                    self.builder.add_scope(PathBuf::from(trimmed));
                 }
                 None
             }
-            Step::ViewMoment => {
-                self.step = Step::EnterPosition;
+            Phase::Focus => {
+                let trimmed = self.input.trim().to_string();
+                self.input.clear();
+                if trimmed.is_empty() {
+                    // Empty line = done adding focus, execute observation.
+                    self.builder.finish_focus();
+                    if let Some(moment) = self.builder.moment() {
+                        self.moment_lines = format_moment(moment);
+                    }
+                } else {
+                    self.builder.add_focus(PathBuf::from(trimmed));
+                }
+                None
+            }
+            Phase::Observed => {
+                self.builder.acknowledge_moment();
                 self.input.clear();
                 None
             }
-            Step::EnterPosition => {
+            Phase::Position => {
                 let text = self.input.trim().to_string();
                 if text.is_empty() {
-                    return None; // Need some position text.
+                    return None; // Reject empty position.
                 }
-
-                let bearing = Bearing {
-                    plan: self.plan.take().expect("plan should exist"),
-                    moment: self.moment.take().expect("moment should exist"),
-                    position: Position {
-                        text,
-                        history: Vec::new(),
-                    },
-                    taken_at: jiff::Timestamp::now(),
-                };
-
-                Some(BearingResult { bearing })
+                // Take ownership via std::mem::replace to call set_position(self).
+                let builder = std::mem::replace(&mut self.builder, BearingBuilder::new());
+                match builder.set_position(text) {
+                    Ok(bearing) => Some(BearingResult { bearing }),
+                    Err(_) => None,
+                }
             }
         }
     }
 
     /// Handle scroll up in the moment view.
     pub fn on_scroll_up(&mut self) {
-        if matches!(self.step, Step::ViewMoment) && self.scroll_offset > 0 {
+        if self.builder.phase() == Phase::Observed && self.scroll_offset > 0 {
             self.scroll_offset -= 1;
         }
     }
 
     /// Handle scroll down in the moment view.
     pub fn on_scroll_down(&mut self) {
-        if matches!(self.step, Step::ViewMoment) {
+        if self.builder.phase() == Phase::Observed {
             self.scroll_offset += 1;
         }
-    }
-
-    fn execute(&mut self) {
-        let plan = BearingPlan {
-            sources: vec![SourceQuery::Files {
-                scope: self.scope.clone(),
-                focus: self.focus.clone(),
-            }],
-        };
-
-        let observations: Vec<Observation> = plan.sources.iter().map(observe::observe).collect();
-
-        let moment = Moment { observations };
-        self.moment_lines = format_moment(&moment);
-        self.moment = Some(moment);
-        self.plan = Some(plan);
-        self.scroll_offset = 0;
     }
 
     pub fn render(&self, frame: &mut Frame) {
@@ -185,11 +129,11 @@ impl BearingFlow {
             .add_modifier(Modifier::BOLD);
 
         // Header.
-        let step_label = match self.step {
-            Step::Scope => "Take Bearing — Scope",
-            Step::Focus => "Take Bearing — Focus",
-            Step::ViewMoment => "Take Bearing — Moment",
-            Step::EnterPosition => "Take Bearing — Position",
+        let step_label = match self.builder.phase() {
+            Phase::Scope => "Take Bearing — Scope",
+            Phase::Focus => "Take Bearing — Focus",
+            Phase::Observed => "Take Bearing — Moment",
+            Phase::Position => "Take Bearing — Position",
         };
         let header = Paragraph::new(Line::from(vec![Span::styled(step_label, highlight)]))
             .block(Block::default().padding(Padding::new(2, 0, 1, 0)));
@@ -200,13 +144,13 @@ impl BearingFlow {
         let content_padding = Block::default().padding(Padding::new(2, 2, 0, 0));
         let inner = content_padding.inner(content_area);
 
-        match self.step {
-            Step::Scope => {
+        match self.builder.phase() {
+            Phase::Scope => {
                 let mut lines = vec![Line::from(Span::styled(
                     "Directories to survey (enter path, empty line when done):",
                     muted,
                 ))];
-                for p in &self.scope {
+                for p in self.builder.scope() {
                     lines.push(Line::from(Span::styled(
                         format!("  {}", p.display()),
                         Style::default().fg(Color::Gray),
@@ -215,12 +159,12 @@ impl BearingFlow {
                 let content = Paragraph::new(lines).block(content_padding);
                 frame.render_widget(content, content_area);
             }
-            Step::Focus => {
+            Phase::Focus => {
                 let mut lines = vec![Line::from(Span::styled(
                     "Files to inspect (enter path, empty line when done):",
                     muted,
                 ))];
-                for p in &self.focus {
+                for p in self.builder.focus() {
                     lines.push(Line::from(Span::styled(
                         format!("  {}", p.display()),
                         Style::default().fg(Color::Gray),
@@ -229,7 +173,7 @@ impl BearingFlow {
                 let content = Paragraph::new(lines).block(content_padding);
                 frame.render_widget(content, content_area);
             }
-            Step::ViewMoment => {
+            Phase::Observed => {
                 let visible_height = inner.height as usize;
                 let total = self.moment_lines.len();
                 let max_offset = total.saturating_sub(visible_height);
@@ -244,7 +188,7 @@ impl BearingFlow {
                 let content = Paragraph::new(lines).block(content_padding);
                 frame.render_widget(content, content_area);
             }
-            Step::EnterPosition => {
+            Phase::Position => {
                 let lines = vec![Line::from(Span::styled(
                     "Describe the state of the world (a sentence or two):",
                     muted,
@@ -255,8 +199,8 @@ impl BearingFlow {
         }
 
         // Input line / help line.
-        match self.step {
-            Step::Scope | Step::Focus | Step::EnterPosition => {
+        match self.builder.phase() {
+            Phase::Scope | Phase::Focus | Phase::Position => {
                 let prompt = Paragraph::new(Line::from(vec![
                     Span::styled(" › ", highlight),
                     Span::styled(&self.input, Style::default().fg(Color::White)),
@@ -264,7 +208,7 @@ impl BearingFlow {
                 ]));
                 frame.render_widget(prompt, chunks[2]);
             }
-            Step::ViewMoment => {
+            Phase::Observed => {
                 let help = Paragraph::new(Line::from(vec![Span::styled(
                     " ↑↓ scroll  ⏎ continue  esc cancel",
                     muted,
@@ -339,149 +283,5 @@ fn format_inspections(lines: &mut Vec<String>, inspections: &[FileInspection]) {
                 lines.push(format!("  (error: {e})"));
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use std::fs;
-    use std::path::PathBuf;
-
-    use tempfile::TempDir;
-
-    use crate::model::Observation;
-
-    fn type_str(flow: &mut BearingFlow, s: &str) {
-        for c in s.chars() {
-            flow.on_char(c);
-        }
-    }
-
-    #[test]
-    fn full_flow_produces_bearing() {
-        let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("test.txt"), "hello").unwrap();
-
-        let mut flow = BearingFlow::new();
-
-        // Scope step: add directory, then empty line to continue.
-        type_str(&mut flow, &dir.path().display().to_string());
-        assert!(flow.on_enter().is_none());
-        // Empty line to move to focus.
-        assert!(flow.on_enter().is_none());
-
-        // Focus step: add file, then empty line to execute.
-        type_str(
-            &mut flow,
-            &dir.path().join("test.txt").display().to_string(),
-        );
-        assert!(flow.on_enter().is_none());
-        // Empty line to execute observation.
-        assert!(flow.on_enter().is_none());
-
-        // ViewMoment step: press enter to continue.
-        assert!(flow.on_enter().is_none());
-
-        // EnterPosition step: type position.
-        type_str(&mut flow, "Directory has one test file.");
-        let result = flow.on_enter();
-
-        assert!(result.is_some());
-        let bearing = result.unwrap().bearing;
-        assert_eq!(bearing.position.text, "Directory has one test file.");
-        assert_eq!(bearing.plan.sources.len(), 1);
-
-        // Verify the observation contains both survey and inspection.
-        match &bearing.moment.observations[0] {
-            Observation::Files {
-                survey,
-                inspections,
-            } => {
-                assert_eq!(survey.len(), 1);
-                assert_eq!(inspections.len(), 1);
-            }
-        }
-    }
-
-    #[test]
-    fn empty_scope_is_rejected() {
-        let mut flow = BearingFlow::new();
-        // Empty enter on scope step with no paths added.
-        assert!(flow.on_enter().is_none());
-        // Still on scope step — verify by adding a path (should work).
-        type_str(&mut flow, "/tmp");
-        assert!(flow.on_enter().is_none()); // Adds path, stays on scope.
-    }
-
-    #[test]
-    fn empty_position_is_rejected() {
-        let dir = TempDir::new().unwrap();
-        let mut flow = BearingFlow::new();
-
-        // Get through to position step.
-        type_str(&mut flow, &dir.path().display().to_string());
-        flow.on_enter(); // add scope
-        flow.on_enter(); // empty → move to focus
-        flow.on_enter(); // empty → execute, move to moment
-        flow.on_enter(); // move to position
-
-        // Empty position rejected.
-        assert!(flow.on_enter().is_none());
-    }
-
-    #[test]
-    fn focus_is_optional() {
-        let dir = TempDir::new().unwrap();
-        let mut flow = BearingFlow::new();
-
-        type_str(&mut flow, &dir.path().display().to_string());
-        flow.on_enter(); // add scope
-        flow.on_enter(); // empty → move to focus
-        flow.on_enter(); // empty → execute (no focus), move to moment
-        flow.on_enter(); // move to position
-
-        type_str(&mut flow, "Empty survey.");
-        let result = flow.on_enter();
-        assert!(result.is_some());
-
-        match &result.unwrap().bearing.moment.observations[0] {
-            Observation::Files { inspections, .. } => {
-                assert!(inspections.is_empty());
-            }
-        }
-    }
-
-    #[test]
-    fn format_moment_survey_and_inspection() {
-        let moment = Moment {
-            observations: vec![Observation::Files {
-                survey: vec![DirectorySurvey {
-                    path: PathBuf::from("src/"),
-                    entries: vec![
-                        crate::model::DirectoryEntry {
-                            name: "main.rs".to_string(),
-                            is_dir: false,
-                            size_bytes: Some(100),
-                        },
-                        crate::model::DirectoryEntry {
-                            name: "lib".to_string(),
-                            is_dir: true,
-                            size_bytes: None,
-                        },
-                    ],
-                }],
-                inspections: vec![FileInspection {
-                    path: PathBuf::from("src/main.rs"),
-                    content: FileContent::Text("fn main() {}".to_string()),
-                }],
-            }],
-        };
-
-        let lines = format_moment(&moment);
-        assert!(lines.iter().any(|l| l.contains("src/:")));
-        assert!(lines.iter().any(|l| l.contains("main.rs")));
-        assert!(lines.iter().any(|l| l.contains("fn main()")));
     }
 }

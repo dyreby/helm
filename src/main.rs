@@ -1,3 +1,4 @@
+mod bearing;
 mod model;
 #[allow(dead_code)]
 mod observe;

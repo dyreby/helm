@@ -9,13 +9,13 @@ use uuid::Uuid;
 use crate::model::{LogbookEntry, Voyage, VoyageKind, VoyageStatus};
 use crate::storage::Storage;
 
-use super::screens::{BearingFlow, HomeScreen, VoyageScreen};
+use super::screens::{BearingScreen, HomeScreen, VoyageScreen};
 
 /// Which screen is currently displayed.
 enum Screen {
     Home(HomeScreen),
     Voyage(VoyageScreen),
-    Bearing { flow: BearingFlow, voyage: Voyage },
+    Bearing { flow: BearingScreen, voyage: Voyage },
 }
 
 /// Runs the TUI event loop until the user quits.
@@ -82,7 +82,7 @@ fn event_loop(terminal: &mut DefaultTerminal, storage: &Storage) -> io::Result<(
                             // Take Bearing selected.
                             let voyage = v.voyage().clone();
                             screen = Screen::Bearing {
-                                flow: BearingFlow::new(),
+                                flow: BearingScreen::new(),
                                 voyage,
                             };
                         }
