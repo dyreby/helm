@@ -6,15 +6,16 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
 use uuid::Uuid;
 
-use crate::model::{Voyage, VoyageKind, VoyageStatus};
+use crate::model::{LogbookEntry, Voyage, VoyageKind, VoyageStatus};
 use crate::storage::Storage;
 
-use super::screens::{HomeScreen, VoyageScreen};
+use super::screens::{BearingFlow, HomeScreen, VoyageScreen};
 
 /// Which screen is currently displayed.
 enum Screen {
     Home(HomeScreen),
     Voyage(VoyageScreen),
+    Bearing { flow: BearingFlow, voyage: Voyage },
 }
 
 /// Runs the TUI event loop until the user quits.
@@ -32,6 +33,7 @@ fn event_loop(terminal: &mut DefaultTerminal, storage: &Storage) -> io::Result<(
         terminal.draw(|frame| match &screen {
             Screen::Home(s) => s.render(frame),
             Screen::Voyage(s) => s.render(frame),
+            Screen::Bearing { flow, .. } => flow.render(frame),
         })?;
 
         if let Event::Key(key) = event::read()? {
@@ -75,7 +77,34 @@ fn event_loop(terminal: &mut DefaultTerminal, storage: &Storage) -> io::Result<(
                     }
                     KeyCode::Up | KeyCode::Char('k') => v.move_up(),
                     KeyCode::Down | KeyCode::Char('j') => v.move_down(),
-                    KeyCode::Enter => v.select(),
+                    KeyCode::Enter => {
+                        if v.select() == 0 {
+                            // Take Bearing selected.
+                            let voyage = v.voyage().clone();
+                            screen = Screen::Bearing {
+                                flow: BearingFlow::new(),
+                                voyage,
+                            };
+                        }
+                    }
+                    _ => {}
+                },
+                Screen::Bearing { flow, voyage } => match key.code {
+                    KeyCode::Esc => {
+                        screen = Screen::Voyage(VoyageScreen::new(voyage.clone()));
+                    }
+                    KeyCode::Enter => {
+                        if let Some(result) = flow.on_enter() {
+                            storage
+                                .append_entry(voyage.id, &LogbookEntry::Bearing(result.bearing))
+                                .map_err(io::Error::other)?;
+                            screen = Screen::Voyage(VoyageScreen::new(voyage.clone()));
+                        }
+                    }
+                    KeyCode::Backspace => flow.on_backspace(),
+                    KeyCode::Up => flow.on_scroll_up(),
+                    KeyCode::Down => flow.on_scroll_down(),
+                    KeyCode::Char(c) => flow.on_char(c),
                     _ => {}
                 },
             }
