@@ -15,7 +15,8 @@ pub use action::{ActionOutcome, ActionPlan, ActionReport, FileEdit, FileWrite};
 pub use bearing::{Bearing, BearingPlan};
 pub use position::{Position, PositionAttempt, PositionSource};
 pub use source::{
-    DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Moment, Observation, SourceQuery,
+    DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Moment, MomentRecord,
+    Observation, SourceQuery,
 };
 pub use voyage::{Voyage, VoyageKind, VoyageStatus};
 

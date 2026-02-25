@@ -1,11 +1,12 @@
 mod bearing;
+mod cli;
 mod model;
 #[allow(dead_code)]
 mod observe;
 mod storage;
 mod tui;
 
-use std::process;
+use std::{env, process};
 
 use storage::Storage;
 
@@ -23,7 +24,15 @@ fn main() {
         }
     };
 
-    if let Err(e) = tui::run(&storage) {
+    // If invoked with a subcommand, run the CLI. Otherwise, launch the TUI.
+    let has_args = env::args().count() > 1;
+
+    if has_args {
+        if let Err(e) = cli::run(&storage) {
+            eprintln!("Error: {e}");
+            process::exit(1);
+        }
+    } else if let Err(e) = tui::run(&storage) {
         eprintln!("Error: {e}");
         process::exit(1);
     }
