@@ -20,7 +20,7 @@ This structure repeats at every level: motivation, objective, then the work to g
 A commission is not a mission.
 It lives above voyages — it organizes them, but isn't the target of one.
 A commission closes when all its missions are checked off, not through a `resolve-issue` voyage.
-Commission issues are labeled `commission` on GitHub.
+To create one, use the [commission template](https://github.com/dyreby/helm/issues/new?template=commission.md).
 
 ### Voyages
 
