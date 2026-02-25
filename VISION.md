@@ -74,7 +74,7 @@ This can involve conversation, editing, or both. The goal is a Position I trust 
 
 Decide what to do and shape how to do it. This is where collaboration happens: I talk with the agent about approach, review drafts, iterate on tone, make edits in Helix, ask the agent to refine what I wrote. Conversation and editing interleave in whatever order makes sense.
 
-The agent can see the current bearing and the history of all `BearingPlan`s, but never old snapshot content. If it needs something from a prior scope, it must propose a new bearing.
+The agent can see the current bearing and the history of all `BearingPlan`s, but never old moments. If it needs something from a prior scope, it must propose a new bearing.
 
 This phase ends when I have either a new `BearingPlan` (take another bearing) or an `ActionPlan` (ready to act). If the result is a new `BearingPlan`, Helm immediately takes that bearing and returns to the menu with an updated position.
 
@@ -138,6 +138,8 @@ Plans are always immutable. Survey produces a fresh moment. Inspect adds focus i
 The agent is stateless. Every call receives explicit context and returns a structured proposal. No ongoing session. No hidden memory.
 
 During **Take Bearing**, the agent receives the full history of bearings (plans + positions, not old moments) and produces a Position string. Short, bounded, descriptive. It may reference historical trends if clearly relevant; otherwise it ignores history. Position describes; it never prescribes. I can challenge the position if it's wrong, and the agent re-generates.
+
+During **Correct Position**, the agent re-generates the Position based on my feedback while staying grounded in the current bearing.
 
 During **Correct Course**, the agent receives the current bearing, plan history, and constraints. It must return exactly one of: a new `BearingPlan`, an `ActionPlan`, or an abort. The conversation is bounded by this requirement.
 
