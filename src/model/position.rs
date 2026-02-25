@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 
 /// A short, plain-text statement of the world's state.
 ///
-/// Tracks the accepted text and the history of attempts that were challenged
-/// along the way. The challenge history captures alignment gaps in the
-/// collaboration, not agent failures.
+/// Tracks the accepted text and the history of attempts that were challenged along the way.
+/// The challenge history captures alignment gaps in the collaboration, not agent failures.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Position {
     /// The accepted position text.

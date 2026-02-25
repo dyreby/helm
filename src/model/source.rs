@@ -8,8 +8,8 @@ use uuid::Uuid;
 
 /// A domain-specific query describing what to survey and what to inspect.
 ///
-/// Each variant owns its natural scope and focus types. Adding a new source
-/// kind means adding a variant here and implementing its survey/inspect logic.
+/// Each variant owns its natural scope and focus types.
+/// Adding a new source kind means adding a variant here and implementing its survey/inspect logic.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum SourceQuery {

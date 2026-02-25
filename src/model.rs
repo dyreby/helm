@@ -11,6 +11,8 @@ mod position;
 mod source;
 mod voyage;
 
+use serde::{Deserialize, Serialize};
+
 pub use action::{ActionOutcome, ActionPlan, ActionReport, FileEdit, FileWrite};
 pub use bearing::{Bearing, BearingPlan};
 pub use position::{Position, PositionAttempt, PositionSource};
@@ -23,7 +25,7 @@ pub use voyage::{Voyage, VoyageKind, VoyageStatus};
 /// A single entry in the logbook, serialized as one line of JSONL.
 ///
 /// Tagged enum so each line is self-describing when read back.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum LogbookEntry {
     /// A bearing was taken.

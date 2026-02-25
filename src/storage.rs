@@ -12,11 +12,10 @@
 //!     <bearing-id>.json
 //! ```
 
-use std::{
-    fs::{self, OpenOptions},
-    io::{BufRead, BufReader, Write},
-    path::PathBuf,
-};
+use std::{fs, io, path::PathBuf};
+
+// Traits must be in scope for `.lines()` on BufReader and `.write_all()` on File.
+use io::{BufRead, Write};
 
 use uuid::Uuid;
 
@@ -32,13 +31,13 @@ pub enum StorageError {
     VoyageAlreadyExists(Uuid),
 
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }
 
-pub type Result<T> = std::result::Result<T, StorageError>;
+pub type Result<T> = core::result::Result<T, StorageError>;
 
 /// Local file-based storage for voyages and logbooks.
 pub struct Storage {
@@ -100,7 +99,7 @@ impl Storage {
         let mut voyages = Vec::new();
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(voyages),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(voyages),
             Err(e) => return Err(e.into()),
         };
         for entry in entries {
@@ -123,7 +122,7 @@ impl Storage {
         if !dir.exists() {
             return Err(StorageError::VoyageNotFound(voyage_id));
         }
-        let mut file = OpenOptions::new()
+        let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(dir.join("logbook.jsonl"))?;
@@ -144,7 +143,7 @@ impl Storage {
             return Ok(Vec::new());
         }
         let file = fs::File::open(path)?;
-        let reader = BufReader::new(file);
+        let reader = io::BufReader::new(file);
         let mut entries = Vec::new();
         for line in reader.lines() {
             let line = line?;
