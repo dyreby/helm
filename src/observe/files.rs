@@ -242,7 +242,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let binary_path = dir.path().join("image.bin");
         // Invalid UTF-8 sequence.
-        fs::write(&binary_path, &[0xFF, 0xFE, 0x00, 0x01, 0x80]).unwrap();
+        fs::write(&binary_path, [0xFF, 0xFE, 0x00, 0x01, 0x80]).unwrap();
 
         let focus = vec![binary_path.clone()];
 
