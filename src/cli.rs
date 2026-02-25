@@ -1,26 +1,28 @@
 //! CLI interface for Helm.
 //!
-//! Designed for agents and humans to record voyages and bearings from the
-//! command line. Each subcommand is non-interactive: arguments in, structured
-//! output out.
+//! Designed for agents and humans to record voyages and bearings from the command line.
+//! Each subcommand is non-interactive: arguments in, structured output out.
 //!
 //! The core bearing flow is two commands:
 //!
 //! 1. `helm observe` — run a plan, output the moment (what was observed).
 //! 2. `helm record` — attach a position to a moment, seal the bearing.
 //!
-//! `helm observe` writes the moment to a file (`--out`) or stdout. The caller
-//! decides how to handle it. `helm record` reads the moment back from a file
-//! (`--moment`) or stdin.
+//! `helm observe` writes the moment to a file (`--out`) or stdout. The caller decides how to
+//! handle it. `helm record` reads the moment back from a file (`--moment`) or stdin.
 
+use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::bearing::{observe_bearing, record_bearing};
-use crate::model::{BearingPlan, LogbookEntry, SourceQuery, Voyage, VoyageKind, VoyageStatus};
+use crate::model::{
+    BearingPlan, LogbookEntry, MomentRecord, SourceQuery, Voyage, VoyageKind, VoyageStatus,
+};
 use crate::storage::Storage;
 
 /// Helm — navigate your work.
@@ -192,7 +194,7 @@ fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), Strin
 
     match out {
         Some(path) => {
-            std::fs::write(&path, &json)
+            fs::write(&path, &json)
                 .map_err(|e| format!("failed to write {}: {e}", path.display()))?;
             // Summary to stderr so the agent sees it regardless.
             eprintln!("Observation written to {}", path.display());
@@ -215,8 +217,7 @@ fn cmd_record(
 
     // Read the observation output from file or stdin.
     let json = if let Some(path) = moment_path {
-        std::fs::read_to_string(&path)
-            .map_err(|e| format!("failed to read {}: {e}", path.display()))?
+        fs::read_to_string(&path).map_err(|e| format!("failed to read {}: {e}", path.display()))?
     } else {
         let mut buf = String::new();
         io::stdin()
@@ -342,8 +343,8 @@ fn resolve_voyage(storage: &Storage, reference: &str) -> Result<Voyage, String> 
 ///
 /// Bundles the plan and moment record so `helm record` has everything
 /// it needs to seal a bearing without re-observing.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ObservationOutput {
     plan: BearingPlan,
-    moment_record: crate::model::MomentRecord,
+    moment_record: MomentRecord,
 }
