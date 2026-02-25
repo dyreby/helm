@@ -156,11 +156,14 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::model::*;
-    use jiff::Timestamp;
     use std::path::PathBuf;
+
+    use jiff::Timestamp;
     use tempfile::TempDir;
+
+    use crate::model::*;
+
+    use super::*;
 
     fn test_storage() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();
