@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Bearing construction: the domain logic for taking a bearing.
 //!
 //! A bearing is built in steps: define scope, define focus, observe,

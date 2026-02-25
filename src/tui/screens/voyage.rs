@@ -41,15 +41,8 @@ impl VoyageScreen {
         }
     }
 
-    /// Returns the selected menu item index.
-    pub fn select(&self) -> usize {
-        self.selected
-    }
-
-    /// Access the voyage this screen is displaying.
-    pub fn voyage(&self) -> &Voyage {
-        &self.voyage
-    }
+    #[allow(clippy::unused_self)] // Menu items don't do anything yet — navigation skeleton only.
+    pub fn select(&self) {}
 
     pub fn render(&self, frame: &mut Frame) {
         let area = frame.area();
