@@ -17,6 +17,11 @@ It has three parts:
 Each mission is itself an issue with its own **Why** and **What**.
 This structure repeats at every level: motivation, objective, then the work to get there.
 
+A commission is not a mission.
+It lives above missions and voyages — it organizes them, but isn't the target of one.
+A commission closes when all its missions are checked off, not through a `resolve-issue` voyage.
+To create one, use the [commission template](https://github.com/dyreby/helm/issues/new?template=commission.md).
+
 ### Voyages
 
 A **voyage** is tracked through the helm CLI.
