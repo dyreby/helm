@@ -12,6 +12,8 @@ use ignore::WalkBuilder;
 use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation};
 
 /// Well-known documentation file names (case-insensitive matching).
+///
+/// This list will evolve as Helm encounters more project conventions.
 const DOC_NAMES: &[&str] = &[
     "readme",
     "readme.md",
@@ -24,6 +26,11 @@ const DOC_NAMES: &[&str] = &[
     "license.md",
     "license-mit",
     "license-apache",
+    "agents.md",
+    "claude.md",
+    "copilot-instructions.md",
+    "cursorrules",
+    ".cursorrules",
 ];
 
 /// Returns true if a file is a documentation file.
