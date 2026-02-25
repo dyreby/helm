@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// A domain-specific query describing what to survey and what to inspect.
 ///
@@ -83,4 +85,22 @@ pub enum FileContent {
 
     /// File could not be read.
     Error(String),
+}
+
+/// A moment record stored in `moments.jsonl`, linked to a bearing by ID.
+///
+/// Moments are the raw observation data — what the world actually looked like.
+/// They live separately from the logbook because they're large and pruneable.
+/// The bearing in the logbook carries the plan and position (the story);
+/// the moment carries the evidence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MomentRecord {
+    /// The bearing this moment belongs to.
+    pub bearing_id: Uuid,
+
+    /// When the observation was made (before the position was written).
+    pub observed_at: Timestamp,
+
+    /// The raw observation data.
+    pub moment: Moment,
 }
