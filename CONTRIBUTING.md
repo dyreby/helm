@@ -37,3 +37,7 @@ More voyage types will be added as helm grows. When they are, corresponding miss
 3. Work through it. Record bearings. Take actions.
 4. Complete the voyage. Check off the mission.
 5. Return to the commission.
+
+### Getting Started
+
+Run `helm --help` for CLI documentation. That's all you need to start working a mission.
