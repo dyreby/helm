@@ -12,7 +12,7 @@ Helm is a companion to the collaboration framework. Where the framework captures
 
 ## What
 
-Helm is a TUI (terminal user interface) written in Rust and inspired by, among other things, John Boyd's OODA loop, Michael Singer's practice of serving the moment unfolding in front of us, and my dad's love of sailing. It's a personal tool, deeply shaped by how I think, tuned to my intervention style, and not trying to be general.
+Helm is a TUI (terminal user interface) written in Rust and inspired by, among other things, John Boyd's OODA loop, Michael Singer's practice of serving the moment unfolding in front of us, and my dad's love of sailing. It's a personal tool, deeply shaped by how I think, tuned to my interaction style, and not trying to be general.
 
 Helm delegates to external tools for specialized interaction and defines contracts for each (what context goes in, what artifact comes out). An LLM for generating positions, collaborating on plans, and drafting artifacts. An editor for reviewing and approving text before it leaves the system. Which tools fill those roles is a preference, not a dependency. I use [Helix](https://helix-editor.com/) and [pi](https://github.com/badlogic/pi-mono).
 
