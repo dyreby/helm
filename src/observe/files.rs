@@ -88,13 +88,13 @@ fn inspect_file(path: &Path) -> FileInspection {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
     use tempfile::TempDir;
 
     use crate::model::{FileContent, Observation};
-
-    use super::*;
 
     /// Helper: create a temp directory with some files.
     fn setup_test_dir() -> TempDir {
