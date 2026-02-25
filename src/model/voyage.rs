@@ -17,8 +17,13 @@ pub struct Voyage {
 /// The kind of voyage, which frames the first bearing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum VoyageKind {
-    /// Unscoped, general-purpose voyage. No prescribed framing.
+    /// Unscoped, general-purpose voyage.
+    /// No prescribed framing.
     OpenWaters,
+
+    /// Resolve a GitHub issue.
+    /// Frames the voyage around understanding and closing a specific issue.
+    ResolveIssue,
 }
 
 /// Where a voyage stands in its lifecycle.
