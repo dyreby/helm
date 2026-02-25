@@ -158,8 +158,7 @@ Names that drive the design.
 | **ActionPlan** | Intent to affect the world |
 | **ActionReport** | Outcome of action, contains its plan |
 | **Source kinds** | Domains of observable reality |
-| **Scope / Focus** | Data model for survey/inspect attention |
-| **Survey / Inspect** | UI actions for breadth/depth |
+| **Scope / Focus** | How a BearingPlan describes what to survey and what to inspect |
 
 ## Design Principles
 
