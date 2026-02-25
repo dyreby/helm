@@ -12,11 +12,10 @@
 //!     <bearing-id>.json
 //! ```
 
-use std::{
-    fs::{self, OpenOptions},
-    io::{self, BufRead, BufReader, Write},
-    path::PathBuf,
-};
+use std::{fs, io, path::PathBuf};
+
+// Traits must be in scope for `.lines()` on BufReader and `.write_all()` on File.
+use io::{BufRead, Write};
 
 use uuid::Uuid;
 
@@ -123,7 +122,7 @@ impl Storage {
         if !dir.exists() {
             return Err(StorageError::VoyageNotFound(voyage_id));
         }
-        let mut file = OpenOptions::new()
+        let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(dir.join("logbook.jsonl"))?;
@@ -144,7 +143,7 @@ impl Storage {
             return Ok(Vec::new());
         }
         let file = fs::File::open(path)?;
-        let reader = BufReader::new(file);
+        let reader = io::BufReader::new(file);
         let mut entries = Vec::new();
         for line in reader.lines() {
             let line = line?;

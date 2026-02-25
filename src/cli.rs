@@ -12,11 +12,10 @@
 //! The caller decides how to handle it.
 //! `helm record` reads the moment back from a file (`--moment`) or stdin.
 
-use std::{
-    fs,
-    io::{self, Read},
-    path::PathBuf,
-};
+use std::{fs, io, path::PathBuf};
+
+// Trait must be in scope for `.read_to_string()` on stdin.
+use io::Read;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
