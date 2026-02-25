@@ -17,6 +17,11 @@ It has three parts:
 Each mission is itself an issue with its own **Why** and **What**.
 This structure repeats at every level: motivation, objective, then the work to get there.
 
+A commission is not a mission.
+It lives above voyages — it organizes them, but isn't the target of one.
+A commission closes when all its missions are checked off, not through a `resolve-issue` voyage.
+Commission issues are labeled `commission` on GitHub.
+
 ### Voyages
 
 A **voyage** is tracked through the helm CLI.
