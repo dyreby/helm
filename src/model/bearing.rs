@@ -4,8 +4,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::position::Position;
-use super::source::Observation;
+use super::{position::Position, source::Observation};
 
 /// An immutable record: what was observed, and what it means.
 ///

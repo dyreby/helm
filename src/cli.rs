@@ -19,9 +19,11 @@ use io::Read;
 use clap::{Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
-use crate::bearing;
-use crate::model::{LogbookEntry, Observation, Subject, Voyage, VoyageKind, VoyageStatus};
-use crate::storage::Storage;
+use crate::{
+    bearing,
+    model::{LogbookEntry, Observation, Subject, Voyage, VoyageKind, VoyageStatus},
+    storage::Storage,
+};
 
 /// Helm — navigate your work.
 #[derive(Debug, Parser)]

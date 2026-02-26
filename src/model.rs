@@ -3,7 +3,9 @@
 //! These types represent the conceptual architecture:
 //! voyages, bearings, observations, sightings, positions, and actions.
 
-#![allow(dead_code, unused_imports)]
+// Some types are defined for future features (actions, position history)
+// and re-exported here for tests and readiness.
+#![allow(unused_imports)]
 
 mod action;
 mod bearing;

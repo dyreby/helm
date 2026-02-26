@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! Bearing construction: the domain logic for taking a bearing.
 //!
 //! A bearing is built in two steps:
@@ -57,13 +55,13 @@ pub fn record_bearing(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::fs;
 
     use tempfile::TempDir;
 
     use crate::model::Sighting;
-
-    use super::*;
 
     #[test]
     fn observe_then_record() {

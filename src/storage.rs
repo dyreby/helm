@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! Local persistence for voyages and logbooks.
 //!
 //! Each voyage lives in its own directory under the storage root:
@@ -72,6 +70,8 @@ impl Storage {
     }
 
     /// Updates a voyage's metadata on disk.
+    /// Used by voyage lifecycle commands (complete, pause) — not yet wired to CLI.
+    #[allow(dead_code)]
     pub fn update_voyage(&self, voyage: &Voyage) -> Result<()> {
         let path = self.voyage_dir(voyage.id).join("voyage.json");
         if !path.exists() {
