@@ -73,7 +73,7 @@ Produces an `Observation`:
 ```
 
 The mark says *what* was looked at (a Rust project at `.`).
-The sighting contains the full directory tree (survey) and documentation file contents (inspection).
+The sighting contains the full directory tree and documentation file contents.
 
 Source code is not read. This is deliberate — `RustProject` is for orientation.
 It answers "what is this project and how is it structured?" not "what does the code do?"
