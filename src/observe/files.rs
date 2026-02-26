@@ -71,12 +71,14 @@ fn survey_directory(path: &Path) -> DirectorySurvey {
 fn inspect_file(path: &Path) -> FileInspection {
     let content = match fs::read(path) {
         Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(text) => FileContent::Text(text),
+            Ok(text) => FileContent::Text { content: text },
             Err(e) => FileContent::Binary {
                 size_bytes: e.into_bytes().len() as u64,
             },
         },
-        Err(e) => FileContent::Error(e.to_string()),
+        Err(e) => FileContent::Error {
+            message: e.to_string(),
+        },
     };
 
     FileInspection {
@@ -221,7 +223,9 @@ mod tests {
 
         assert_eq!(inspections.len(), 1);
         assert_eq!(inspections[0].path, focus[0]);
-        assert!(matches!(&inspections[0].content, FileContent::Text(s) if s == "hello world"));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world")
+        );
     }
 
     #[test]
@@ -231,7 +235,9 @@ mod tests {
 
         let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
-        assert!(matches!(&inspections[0].content, FileContent::Text(s) if s.is_empty()));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s.is_empty())
+        );
     }
 
     #[test]
@@ -259,7 +265,7 @@ mod tests {
         let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert_eq!(inspections.len(), 1);
-        assert!(matches!(&inspections[0].content, FileContent::Error(_)));
+        assert!(matches!(&inspections[0].content, FileContent::Error { .. }));
     }
 
     #[test]
@@ -273,7 +279,7 @@ mod tests {
 
         let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
-        assert!(matches!(&inspections[0].content, FileContent::Error(_)));
+        assert!(matches!(&inspections[0].content, FileContent::Error { .. }));
 
         // Restore permissions so tempdir cleanup works.
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -291,9 +297,15 @@ mod tests {
         let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert_eq!(inspections.len(), 3);
-        assert!(matches!(&inspections[0].content, FileContent::Text(s) if s == "hello world"));
-        assert!(matches!(&inspections[1].content, FileContent::Text(s) if s.is_empty()));
-        assert!(matches!(&inspections[2].content, FileContent::Text(s) if s == "nested"));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world")
+        );
+        assert!(
+            matches!(&inspections[1].content, FileContent::Text { content: s } if s.is_empty())
+        );
+        assert!(
+            matches!(&inspections[2].content, FileContent::Text { content: s } if s == "nested")
+        );
     }
 
     // ── Combined tests ──
@@ -313,7 +325,9 @@ mod tests {
         assert_eq!(survey[0].entries.len(), 3);
 
         assert_eq!(inspections.len(), 1);
-        assert!(matches!(&inspections[0].content, FileContent::Text(s) if s == "hello world"));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world")
+        );
     }
 
     #[test]

@@ -48,12 +48,13 @@ pub struct ActionReport {
 
 /// What happened when an action was executed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
 pub enum ActionOutcome {
     /// Action completed successfully.
     Success,
 
     /// Action failed with an error message.
-    Failed(String),
+    Failed { message: String },
 
     /// Action was rejected at the approval gate.
     Rejected,

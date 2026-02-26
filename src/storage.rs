@@ -184,9 +184,7 @@ mod tests {
 
     fn sample_bearing() -> Bearing {
         Bearing {
-            id: Uuid::new_v4(),
             observations: vec![Observation {
-                id: Uuid::new_v4(),
                 subject: Subject::Files {
                     scope: vec![PathBuf::from("src/")],
                     focus: vec![],

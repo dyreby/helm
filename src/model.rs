@@ -26,7 +26,7 @@ pub use voyage::{Voyage, VoyageKind, VoyageStatus};
 ///
 /// Tagged enum so each line is self-describing when read back.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "kind")]
 pub enum LogbookEntry {
     /// A bearing was taken.
     Bearing(Bearing),

@@ -4,17 +4,14 @@ use std::path::PathBuf;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// A self-contained observation: what you pointed the spyglass at and what you saw.
 ///
 /// Observations are the building blocks of bearings.
 /// Take as many as you want; only the ones you choose to record become part of a bearing.
+/// Identified by position in the bearing's observation list, not by ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Observation {
-    /// Unique identifier for this observation.
-    pub id: Uuid,
-
     /// What was observed.
     pub subject: Subject,
 
@@ -88,13 +85,14 @@ pub struct FileInspection {
 
 /// What was found when inspecting a file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
 pub enum FileContent {
     /// UTF-8 text content.
-    Text(String),
+    Text { content: String },
 
     /// File was not valid UTF-8. Size recorded for reference.
     Binary { size_bytes: u64 },
 
     /// File could not be read.
-    Error(String),
+    Error { message: String },
 }

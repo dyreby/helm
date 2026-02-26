@@ -2,7 +2,6 @@
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{position::Position, source::Observation};
 
@@ -11,11 +10,10 @@ use super::{position::Position, source::Observation};
 /// A bearing collects the observations you chose to keep
 /// and seals them with your position — your read on what you saw.
 /// Observations you took but discarded are simply not included.
+///
+/// Bearings are identified by position in the logbook stream, not by ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bearing {
-    /// Unique identifier.
-    pub id: Uuid,
-
     /// The observations that inform this bearing.
     pub observations: Vec<Observation>,
 

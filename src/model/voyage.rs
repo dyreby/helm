@@ -16,6 +16,7 @@ pub struct Voyage {
 
 /// The kind of voyage, which frames the first bearing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
 pub enum VoyageKind {
     /// Unscoped, general-purpose voyage.
     /// No prescribed framing.
@@ -28,6 +29,7 @@ pub enum VoyageKind {
 
 /// Where a voyage stands in its lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
 pub enum VoyageStatus {
     /// Work is in progress.
     Active,
