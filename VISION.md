@@ -2,7 +2,7 @@
 
 Helm is how I want to work with a coding agent.
 
-I want to set the course, trust my agent to crew the voyage, and review the logbook along the way.
+I want to set the course, trust my crew, and review the logbook along the way.
 
 ## Principles
 
