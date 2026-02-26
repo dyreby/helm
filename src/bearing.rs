@@ -7,19 +7,16 @@
 //! 2. **Record** — select the observations that matter,
 //!    attach a position, and seal the bearing.
 
-use uuid::Uuid;
-
 use crate::model::{Bearing, Observation, Position, Subject};
 
 /// Take a single observation: look at a subject and record what was seen.
 ///
-/// Returns a self-contained `Observation` with its own ID and timestamp.
+/// Returns a self-contained `Observation` with its own timestamp.
 /// The caller decides whether to include it in a bearing or discard it.
 pub fn observe(subject: &Subject) -> Observation {
     let sighting = crate::observe::observe(subject);
 
     Observation {
-        id: Uuid::new_v4(),
         subject: subject.clone(),
         sighting,
         observed_at: jiff::Timestamp::now(),
@@ -43,7 +40,6 @@ pub fn record_bearing(
     }
 
     Ok(Bearing {
-        id: Uuid::new_v4(),
         observations,
         position: Position {
             text: position_text,

@@ -117,12 +117,14 @@ pub fn observe_rust_project(root: &Path) -> Sighting {
         if !is_dir && is_doc_file(path, root) {
             let content = match fs::read(path) {
                 Ok(bytes) => match String::from_utf8(bytes) {
-                    Ok(text) => FileContent::Text(text),
+                    Ok(text) => FileContent::Text { content: text },
                     Err(e) => FileContent::Binary {
                         size_bytes: e.into_bytes().len() as u64,
                     },
                 },
-                Err(e) => FileContent::Error(e.to_string()),
+                Err(e) => FileContent::Error {
+                    message: e.to_string(),
+                },
             };
             inspections.push(FileInspection {
                 path: path.to_path_buf(),

@@ -310,9 +310,8 @@ fn cmd_record(
         .append_entry(voyage.id, &LogbookEntry::Bearing(sealed.clone()))
         .map_err(|e| format!("failed to save bearing: {e}"))?;
 
-    let short_id = &sealed.id.to_string()[..8];
     eprintln!(
-        "Bearing {short_id} recorded for voyage {}",
+        "Bearing recorded for voyage {}",
         &voyage.id.to_string()[..8]
     );
     eprintln!("Position: {position}");
@@ -351,8 +350,7 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
     for (i, entry) in entries.iter().enumerate() {
         match entry {
             LogbookEntry::Bearing(b) => {
-                let short_id = &b.id.to_string()[..8];
-                println!("── Bearing {} ({short_id}) ── {}", i + 1, b.taken_at);
+                println!("── Bearing {} ── {}", i + 1, b.taken_at);
                 for obs in &b.observations {
                     match &obs.subject {
                         Subject::Files { scope, focus } => {
