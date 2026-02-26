@@ -24,8 +24,8 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::model::{
-    Action, ActionKind, IssueAction, LogbookEntry, Mark, Observation, PullRequestAction, Voyage, VoyageKind,
-    VoyageStatus,
+    Action, ActionKind, IssueAction, LogbookEntry, Mark, Observation, PullRequestAction, Voyage,
+    VoyageKind, VoyageStatus,
 };
 use crate::{bearing, storage::Storage};
 
@@ -702,7 +702,11 @@ fn execute_close_issue(gh_config: &PathBuf, number: u64) -> Result<ActionKind, S
     })
 }
 
-fn execute_comment_issue(gh_config: &PathBuf, number: u64, body: &str) -> Result<ActionKind, String> {
+fn execute_comment_issue(
+    gh_config: &PathBuf,
+    number: u64,
+    body: &str,
+) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd(
         "gh",
