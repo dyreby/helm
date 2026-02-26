@@ -2,7 +2,7 @@
 
 A personal, Rust-based CLI for disciplined collaboration with a coding agent.
 
-You set the course, the agent crews. The helm awaits. ⎈
+You set the course, your agent crews. The helm awaits. ⎈
 
 Inspired in part by John Boyd's OODA loop, Michael Singer's model of reality as a series of moments unfolding in front of us, and my dad's love of sailing.
 
