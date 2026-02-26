@@ -32,7 +32,7 @@ Each mark describes a domain of observable reality — not a mechanism. Commands
 - **Append-only.** The logbook is a trail, not a workspace.
 - **Caller-agnostic.** Helm serves whoever calls it — human, agent, or script.
 - **Local.** No syncing, no shared state.
-- **I set the course; the crew sails; Helm keeps the log.** Review the logbook along the way.
+- **Trust the voyage.** The logbook is always there when I want to look.
 - **Bring your own tools.** Helm orchestrates; external tools do the specialized work.
 - **Joy matters.** Language shapes how a tool feels to use. The nautical theme is helpful and fun. ⛵️
 
