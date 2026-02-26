@@ -15,10 +15,9 @@ If you need to stop and come back, a bearing captures where things stand.
 
 ## Bearings
 
-A bearing captures the state of the world at a point in time.
-Observations are the raw data — what you see when you point the spyglass at a source kind.
-A position is a short statement about what the observations mean.
-Together they form an immutable record in the logbook.
+A bearing records what you looked at and what you concluded.
+The position is your read on the state of the world; the subjects tell what it was based on.
+Full observations are stored separately as artifacts — useful for deeper context, but not required to follow the voyage's story.
 
 Bearings exist for continuity, not documentation.
 If a voyage finishes in one session, the completion summary is often the only record needed.
