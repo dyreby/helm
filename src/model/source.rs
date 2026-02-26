@@ -32,18 +32,22 @@ pub struct Observation {
 pub enum Mark {
     /// Filesystem structure and content.
     ///
-    /// Scope: directories to survey (list contents with metadata).
-    /// Focus: specific files to inspect (read full contents).
+    /// Lists directories and reads files exactly as specified.
+    /// No recursion, filtering, or domain awareness.
+    /// Domain-specific marks like `RustProject` add that intelligence.
+    ///
+    /// - `list`: directories to list immediate contents of.
+    /// - `read`: files to read.
     Files {
-        scope: Vec<PathBuf>,
-        focus: Vec<PathBuf>,
+        list: Vec<PathBuf>,
+        read: Vec<PathBuf>,
     },
 
     /// A Rust project rooted at a directory.
     ///
     /// Walks the project tree, respects `.gitignore`, skips `target/`.
-    /// Survey: full directory tree with metadata.
-    /// Focus: all source files (everything that isn't binary or ignored).
+    /// Lists the full directory tree with metadata.
+    /// Reads documentation files (everything else is left for targeted `Files` queries).
     RustProject { root: PathBuf },
 }
 
@@ -53,17 +57,17 @@ pub enum Mark {
 pub enum Sighting {
     /// Results from observing a filesystem mark.
     Files {
-        /// Directory listings from surveyed paths.
-        survey: Vec<DirectorySurvey>,
+        /// Directory listings from listed paths.
+        listings: Vec<DirectoryListing>,
 
-        /// File contents from focused paths.
-        inspections: Vec<FileInspection>,
+        /// File contents from read paths.
+        contents: Vec<FileContents>,
     },
 }
 
-/// A directory listing produced by surveying a path.
+/// A directory listing produced by listing a path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DirectorySurvey {
+pub struct DirectoryListing {
     pub path: PathBuf,
     pub entries: Vec<DirectoryEntry>,
 }
@@ -76,14 +80,14 @@ pub struct DirectoryEntry {
     pub size_bytes: Option<u64>,
 }
 
-/// The contents of a file produced by inspecting a path.
+/// The contents of a file produced by reading a path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileInspection {
+pub struct FileContents {
     pub path: PathBuf,
     pub content: FileContent,
 }
 
-/// What was found when inspecting a file.
+/// What was found when reading a file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum FileContent {

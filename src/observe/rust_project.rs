@@ -1,8 +1,8 @@
 //! Rust project source kind: project structure and documentation.
 //!
 //! Walks a Rust project tree, respects `.gitignore`, skips `target/`.
-//! Produces a full directory tree (survey) and inspects documentation files.
-//! Source code is not inspected — that's what `Files` is for on subsequent bearings.
+//! Produces a full directory tree (listings) and reads documentation files (contents).
+//! Source code is not read — that's what `Files` is for on subsequent bearings.
 
 use std::{
     collections::BTreeMap,
@@ -12,7 +12,7 @@ use std::{
 
 use ignore::WalkBuilder;
 
-use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Sighting};
+use crate::model::{DirectoryEntry, DirectoryListing, FileContent, FileContents, Sighting};
 
 /// Well-known documentation file names (case-insensitive matching).
 ///
@@ -75,7 +75,7 @@ fn is_doc_file(path: &Path, root: &Path) -> bool {
 /// Source files are left for targeted `Files` queries on subsequent bearings.
 pub fn observe_rust_project(root: &Path) -> Sighting {
     let mut dir_entries: BTreeMap<PathBuf, Vec<DirectoryEntry>> = BTreeMap::new();
-    let mut inspections: Vec<FileInspection> = Vec::new();
+    let mut contents: Vec<FileContents> = Vec::new();
 
     let walker = WalkBuilder::new(root)
         .hidden(false) // Show dotfiles (like .github/).
@@ -113,7 +113,7 @@ pub fn observe_rust_project(root: &Path) -> Sighting {
                 .push(dir_entry);
         }
 
-        // Inspect documentation files only.
+        // Read documentation files only.
         if !is_dir && is_doc_file(path, root) {
             let content = match fs::read(path) {
                 Ok(bytes) => match String::from_utf8(bytes) {
@@ -126,22 +126,19 @@ pub fn observe_rust_project(root: &Path) -> Sighting {
                     message: e.to_string(),
                 },
             };
-            inspections.push(FileInspection {
+            contents.push(FileContents {
                 path: path.to_path_buf(),
                 content,
             });
         }
     }
 
-    let surveys = dir_entries
+    let listings = dir_entries
         .into_iter()
-        .map(|(path, entries)| DirectorySurvey { path, entries })
+        .map(|(path, entries)| DirectoryListing { path, entries })
         .collect();
 
-    Sighting::Files {
-        survey: surveys,
-        inspections,
-    }
+    Sighting::Files { listings, contents }
 }
 
 #[cfg(test)]
@@ -184,13 +181,13 @@ mod tests {
     fn tree_includes_all_non_ignored_entries() {
         let dir = setup_rust_project();
         let Sighting::Files {
-            survey,
-            inspections: _,
+            listings,
+            contents: _,
         } = observe_rust_project(dir.path());
 
         // Root should have src/, docs/, Cargo.toml, README.md, etc. but not target/.
-        let root_survey = survey.iter().find(|s| s.path == dir.path()).unwrap();
-        let names: Vec<&str> = root_survey
+        let root_listing = listings.iter().find(|s| s.path == dir.path()).unwrap();
+        let names: Vec<&str> = root_listing
             .entries
             .iter()
             .map(|e| e.name.as_str())
@@ -203,11 +200,11 @@ mod tests {
     }
 
     #[test]
-    fn inspects_only_docs() {
+    fn reads_only_docs() {
         let dir = setup_rust_project();
-        let Sighting::Files { inspections, .. } = observe_rust_project(dir.path());
+        let Sighting::Files { contents, .. } = observe_rust_project(dir.path());
 
-        let paths: Vec<String> = inspections
+        let paths: Vec<String> = contents
             .iter()
             .map(|i| {
                 i.path
@@ -218,7 +215,7 @@ mod tests {
             })
             .collect();
 
-        // Docs are inspected.
+        // Docs are read.
         assert!(paths.contains(&"README.md".to_string()));
         assert!(paths.contains(&"VISION.md".to_string()));
         assert!(paths.contains(&"docs/design.md".to_string()));
@@ -232,13 +229,10 @@ mod tests {
     #[test]
     fn skips_target_directory() {
         let dir = setup_rust_project();
-        let Sighting::Files {
-            survey,
-            inspections,
-        } = observe_rust_project(dir.path());
+        let Sighting::Files { listings, contents } = observe_rust_project(dir.path());
 
-        assert!(!survey.iter().any(|s| s.path.ends_with("target")));
-        assert!(!inspections.iter().any(|i| {
+        assert!(!listings.iter().any(|s| s.path.ends_with("target")));
+        assert!(!contents.iter().any(|i| {
             i.path
                 .strip_prefix(dir.path())
                 .unwrap()
@@ -250,16 +244,20 @@ mod tests {
     fn tree_includes_nested_structure() {
         let dir = setup_rust_project();
         let Sighting::Files {
-            survey,
-            inspections: _,
+            listings,
+            contents: _,
         } = observe_rust_project(dir.path());
 
-        // src/ directory should have its own survey.
-        let src_survey = survey
+        // src/ directory should have its own listing.
+        let src_listing = listings
             .iter()
             .find(|s| s.path == dir.path().join("src"))
             .unwrap();
-        let names: Vec<&str> = src_survey.entries.iter().map(|e| e.name.as_str()).collect();
+        let names: Vec<&str> = src_listing
+            .entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
         assert!(names.contains(&"main.rs"));
         assert!(names.contains(&"lib.rs"));
     }

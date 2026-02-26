@@ -65,20 +65,17 @@ mod tests {
         fs::write(dir.path().join("test.txt"), "hello").unwrap();
 
         let mark = Mark::Files {
-            scope: vec![dir.path().to_path_buf()],
-            focus: vec![dir.path().join("test.txt")],
+            list: vec![dir.path().to_path_buf()],
+            read: vec![dir.path().join("test.txt")],
         };
 
         // Step 1: observe.
         let observation = observe(&mark);
 
         match &observation.sighting {
-            Sighting::Files {
-                survey,
-                inspections,
-            } => {
-                assert_eq!(survey.len(), 1);
-                assert_eq!(inspections.len(), 1);
+            Sighting::Files { listings, contents } => {
+                assert_eq!(listings.len(), 1);
+                assert_eq!(contents.len(), 1);
             }
         }
 
@@ -95,13 +92,13 @@ mod tests {
         fs::write(dir.path().join("b.txt"), "bbb").unwrap();
 
         let obs1 = observe(&Mark::Files {
-            scope: vec![dir.path().to_path_buf()],
-            focus: vec![],
+            list: vec![dir.path().to_path_buf()],
+            read: vec![],
         });
 
         let obs2 = observe(&Mark::Files {
-            scope: vec![],
-            focus: vec![dir.path().join("a.txt")],
+            list: vec![],
+            read: vec![dir.path().join("a.txt")],
         });
 
         let bearing = record_bearing(
@@ -123,8 +120,8 @@ mod tests {
     fn rejects_empty_reading() {
         let dir = TempDir::new().unwrap();
         let observation = observe(&Mark::Files {
-            scope: vec![dir.path().to_path_buf()],
-            focus: vec![],
+            list: vec![dir.path().to_path_buf()],
+            read: vec![],
         });
 
         let err = record_bearing(vec![observation], "  ".to_string()).unwrap_err();
@@ -137,14 +134,14 @@ mod tests {
         fs::write(dir.path().join("a.txt"), "aaa").unwrap();
 
         let keep = observe(&Mark::Files {
-            scope: vec![dir.path().to_path_buf()],
-            focus: vec![],
+            list: vec![dir.path().to_path_buf()],
+            read: vec![],
         });
 
         // Take another observation but don't include it.
         let _discard = observe(&Mark::Files {
-            scope: vec![],
-            focus: vec![dir.path().join("a.txt")],
+            list: vec![],
+            read: vec![dir.path().join("a.txt")],
         });
 
         let bearing = record_bearing(vec![keep], "Only the survey matters.".to_string()).unwrap();

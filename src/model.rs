@@ -15,7 +15,7 @@ pub use action::{Act, Action, IssueAct, PullRequestAct};
 pub use bearing::Bearing;
 pub use reading::Reading;
 pub use source::{
-    DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Mark, Observation, Sighting,
+    DirectoryEntry, DirectoryListing, FileContent, FileContents, Mark, Observation, Sighting,
 };
 pub use voyage::{Voyage, VoyageKind, VoyageStatus};
 
