@@ -38,6 +38,7 @@ Source kinds grow as Helm needs to see more of the world.
 ## Principles
 
 - **Non-interactive.** Arguments in, output out. Commands compose with pipes, files, and scripts.
+- **Nothing moves without my understanding.** I trust voyage types, not individual steps. If I understand and approve a voyage, it can run its course and report back.
 - **Caller-agnostic.** Helm serves whoever calls it — human, agent, TUI, or script.
 - **Append-only.** The logbook is a trail, not a workspace.
 - **Local.** No syncing, no shared state.
