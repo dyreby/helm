@@ -7,7 +7,7 @@ Each voyage has an intent, an append-only logbook, and an outcome.
 
 A voyage starts with intent — where you're going and why.
 Along the way you take bearings to understand where you are and take actions to change the world.
-The logbook records everything that happened, in order, immutably.
+The logbook records what you choose to capture, in order, immutably.
 
 Voyages are short by design.
 The ideal voyage is one session.
@@ -19,8 +19,9 @@ A bearing records what you looked at and what you concluded.
 The position is your read on the state of the world; the subjects tell what it was based on.
 Full observations are stored separately as artifacts — useful for deeper context, but not required to follow the voyage's story.
 
-Bearings exist for continuity, not documentation.
-If a voyage finishes in one session, the completion summary is often the only record needed.
+Bearings serve continuity and documentation.
+Scanning positions across bearings tells the voyage's story without replaying raw sightings.
+If a voyage finishes in one session, the intent and completion summary often tell the whole story.
 
 ## Actions
 
