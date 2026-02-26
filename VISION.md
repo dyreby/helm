@@ -47,4 +47,4 @@ Source kinds grow as Helm needs to see more of the world.
 
 ## Inspirations
 
-Helm is inspired by, among other things, John Boyd's OODA loop, Michael Singer's practice of serving the moment unfolding in front of us, and my dad's love of sailing. It's a personal tool, deeply shaped by how I think, tuned to my preferred way of working, and not trying to be general.
+Helm is inspired by, among other things, John Boyd's OODA loop, Michael Singer's model that reality is a series of moments unfolding in front of us, and my dad's love of sailing. It's a personal tool, deeply shaped by how I think, tuned to my preferred way of working, and not trying to be general.
