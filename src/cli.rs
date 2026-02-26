@@ -7,23 +7,27 @@
 //!
 //! - `helm voyage` — lifecycle commands grouped under the domain concept.
 //! - `helm observe`, `helm record` — flat verbs, unambiguous on their own.
+//! - `helm act` — record an action that changed the world.
 //!
 //! Observing outputs an observation (subject + sighting) to stdout or a file.
 //! Recording selects observations, attaches a position, and writes the bearing to the logbook.
+//! Acting executes git/GitHub operations and records them in the logbook.
 
-use std::{fs, io, path::PathBuf};
+use std::path::PathBuf;
+use std::{fs, io, process};
 
 // Trait must be in scope for `.read_to_string()` on stdin.
 use io::Read;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::{
-    bearing,
-    model::{LogbookEntry, Observation, Subject, Voyage, VoyageKind, VoyageStatus},
-    storage::Storage,
+use crate::model::{
+    Act, Action, IssueAct, LogbookEntry, Observation, PullRequestAct, Subject, Voyage, VoyageKind,
+    VoyageStatus,
 };
+use crate::{bearing, storage::Storage};
 
 /// Helm — navigate your work.
 #[derive(Debug, Parser)]
@@ -42,6 +46,11 @@ const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
 Stopping mid-voyage? Record a bearing so the next session has context:
   helm observe rust-project . --out obs.json
   helm record a3b "Halfway through, refactoring widget module" --observation obs.json
+
+Record actions that change the world:
+  helm act a3b --as john-agent push --branch fix-widget --sha abc1234
+  helm act a3b --as john-agent create-pull-request 45
+  helm act a3b --as john-agent merge-pull-request 45
 
 Check on voyages:
   helm voyage list           → see active voyages
@@ -91,6 +100,133 @@ pub enum Command {
         #[arg(long)]
         observation: Vec<PathBuf>,
     },
+
+    /// Record an action: something that changed the world.
+    ///
+    /// Each action records a single act (push, create PR, merge, comment, etc.)
+    /// and the identity that performed it. The logbook captures what happened,
+    /// not what was planned — failed operations are not recorded.
+    ///
+    /// Identity selects which GitHub account to use for `gh` commands.
+    /// Git operations use ambient git config.
+    Act {
+        /// Voyage ID: full UUID or unambiguous prefix.
+        voyage: String,
+
+        /// Identity to act as (e.g. "dyreby", "john-agent").
+        /// Selects the GitHub config directory for `gh` commands.
+        #[arg(long = "as")]
+        identity: String,
+
+        /// The act to perform.
+        #[command(subcommand)]
+        act: ActCommand,
+    },
+}
+
+/// Act subcommands — one per kind of action.
+#[derive(Debug, Subcommand)]
+pub enum ActCommand {
+    /// Push commits to a branch.
+    Push {
+        /// Branch name.
+        #[arg(long)]
+        branch: String,
+
+        /// Commit message for the push.
+        #[arg(long)]
+        message: Option<String>,
+    },
+
+    /// Create a pull request.
+    CreatePullRequest {
+        /// Branch to create the PR from.
+        #[arg(long)]
+        branch: String,
+
+        /// PR title.
+        #[arg(long)]
+        title: String,
+
+        /// PR body.
+        #[arg(long)]
+        body: Option<String>,
+
+        /// Base branch (defaults to main).
+        #[arg(long, default_value = "main")]
+        base: String,
+
+        /// Request review from these users.
+        #[arg(long)]
+        reviewer: Vec<String>,
+    },
+
+    /// Merge a pull request (squash merge).
+    MergePullRequest {
+        /// PR number.
+        number: u64,
+    },
+
+    /// Comment on a pull request.
+    CommentOnPullRequest {
+        /// PR number.
+        number: u64,
+
+        /// Comment body.
+        #[arg(long)]
+        body: String,
+    },
+
+    /// Reply to an inline review comment on a pull request.
+    ReplyOnPullRequest {
+        /// PR number.
+        number: u64,
+
+        /// The review comment ID to reply to.
+        #[arg(long)]
+        comment_id: u64,
+
+        /// Reply body.
+        #[arg(long)]
+        body: String,
+    },
+
+    /// Request review on a pull request.
+    RequestReview {
+        /// PR number.
+        number: u64,
+
+        /// Users to request review from.
+        #[arg(long, required = true)]
+        reviewer: Vec<String>,
+    },
+
+    /// Create a new issue.
+    CreateIssue {
+        /// Issue title.
+        #[arg(long)]
+        title: String,
+
+        /// Issue body.
+        #[arg(long)]
+        body: Option<String>,
+    },
+
+    /// Close an issue.
+    CloseIssue {
+        /// Issue number.
+        number: u64,
+    },
+
+    /// Comment on an issue.
+    CommentOnIssue {
+        /// Issue number.
+        number: u64,
+
+        /// Comment body.
+        #[arg(long)]
+        body: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -110,8 +246,9 @@ pub enum VoyageCommand {
 
     /// Show a voyage's logbook: the trail of bearings and actions.
     ///
-    /// Displays observations and positions for each bearing, and outcomes for each action.
-    /// The logbook tells the story through positions.
+    /// Displays observations and positions for each bearing,
+    /// and identity/act for each action.
+    /// The logbook tells the story through positions and actions.
     Log {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
@@ -191,6 +328,11 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             position,
             observation,
         } => cmd_record(storage, &voyage, &position, &observation),
+        Command::Act {
+            voyage,
+            identity,
+            act,
+        } => cmd_act(storage, &voyage, &identity, &act),
     }
 }
 
@@ -199,7 +341,7 @@ fn cmd_new(storage: &Storage, intent: &str, kind: &VoyageKindArg) -> Result<(), 
         id: Uuid::new_v4(),
         kind: kind.to_domain(),
         intent: intent.to_string(),
-        created_at: jiff::Timestamp::now(),
+        created_at: Timestamp::now(),
         status: VoyageStatus::Active,
     };
 
@@ -319,6 +461,372 @@ fn cmd_record(
     Ok(())
 }
 
+fn cmd_act(
+    storage: &Storage,
+    voyage_ref: &str,
+    identity: &str,
+    act_cmd: &ActCommand,
+) -> Result<(), String> {
+    let voyage = resolve_voyage(storage, voyage_ref)?;
+
+    if matches!(voyage.status, VoyageStatus::Completed { .. }) {
+        return Err(format!(
+            "voyage {} is already completed",
+            &voyage.id.to_string()[..8]
+        ));
+    }
+
+    let gh_config = gh_config_dir(identity)?;
+    let act = execute_act(act_cmd, &gh_config)?;
+
+    let action = Action {
+        id: Uuid::new_v4(),
+        identity: identity.to_string(),
+        act,
+        performed_at: Timestamp::now(),
+    };
+
+    storage
+        .append_entry(voyage.id, &LogbookEntry::Action(action.clone()))
+        .map_err(|e| format!("failed to save action: {e}"))?;
+
+    let short_id = &voyage.id.to_string()[..8];
+    eprintln!("Action recorded for voyage {short_id}");
+    eprintln!("  as: {identity}");
+    eprintln!("  {}", format_act(&action.act));
+
+    Ok(())
+}
+
+/// Resolve the `GH_CONFIG_DIR` for a given identity.
+///
+/// Each identity has its own config directory under `~/.helm/gh-config/<identity>/`.
+/// The directory must exist and contain valid `gh` auth.
+fn gh_config_dir(identity: &str) -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("could not determine home directory")?;
+    let config_dir = home.join(".helm").join("gh-config").join(identity);
+    if !config_dir.exists() {
+        return Err(format!(
+            "no GitHub config for identity '{identity}' — \
+             expected directory at {}\n\
+             Set up with: GH_CONFIG_DIR={} gh auth login",
+            config_dir.display(),
+            config_dir.display(),
+        ));
+    }
+    Ok(config_dir)
+}
+
+/// Execute the act and return the structured `Act` on success.
+fn execute_act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<Act, String> {
+    match act_cmd {
+        ActCommand::Push { branch, message } => execute_push(branch, message.as_deref()),
+        ActCommand::CreatePullRequest {
+            branch,
+            title,
+            body,
+            base,
+            reviewer,
+        } => execute_create_pr(gh_config, branch, title, body.as_deref(), base, reviewer),
+        ActCommand::MergePullRequest { number } => execute_merge_pr(gh_config, *number),
+        ActCommand::CommentOnPullRequest { number, body } => {
+            execute_comment_pr(gh_config, *number, body)
+        }
+        ActCommand::ReplyOnPullRequest {
+            number,
+            comment_id,
+            body,
+        } => execute_reply_pr(gh_config, *number, *comment_id, body),
+        ActCommand::RequestReview { number, reviewer } => {
+            execute_request_review(gh_config, *number, reviewer)
+        }
+        ActCommand::CreateIssue { title, body } => {
+            execute_create_issue(gh_config, title, body.as_deref())
+        }
+        ActCommand::CloseIssue { number } => execute_close_issue(gh_config, *number),
+        ActCommand::CommentOnIssue { number, body } => {
+            execute_comment_issue(gh_config, *number, body)
+        }
+    }
+}
+
+fn execute_push(branch: &str, message: Option<&str>) -> Result<Act, String> {
+    if let Some(msg) = message {
+        run_cmd("git", &["add", "-A"], None)?;
+        run_cmd("git", &["commit", "-m", msg], None)?;
+    }
+    run_cmd("git", &["push", "origin", branch], None)?;
+
+    let sha = run_cmd_output("git", &["rev-parse", "HEAD"], None)?;
+
+    Ok(Act::Pushed {
+        branch: branch.to_string(),
+        sha,
+    })
+}
+
+fn execute_create_pr(
+    gh_config: &PathBuf,
+    branch: &str,
+    title: &str,
+    body: Option<&str>,
+    base: &str,
+    reviewers: &[String],
+) -> Result<Act, String> {
+    let mut args = vec![
+        "pr", "create", "--head", branch, "--base", base, "--title", title,
+    ];
+    if let Some(b) = body {
+        args.extend(["--body", b]);
+    }
+    for r in reviewers {
+        args.extend(["--reviewer", r]);
+    }
+
+    let output = run_cmd_output("gh", &args, Some(gh_config))?;
+    let number = parse_pr_number_from_url(&output)?;
+
+    Ok(Act::PullRequest {
+        number,
+        act: PullRequestAct::Created,
+    })
+}
+
+fn execute_merge_pr(gh_config: &PathBuf, number: u64) -> Result<Act, String> {
+    let num_str = number.to_string();
+    run_cmd(
+        "gh",
+        &["pr", "merge", &num_str, "--squash", "--delete-branch"],
+        Some(gh_config),
+    )?;
+
+    Ok(Act::PullRequest {
+        number,
+        act: PullRequestAct::Merged,
+    })
+}
+
+fn execute_comment_pr(gh_config: &PathBuf, number: u64, body: &str) -> Result<Act, String> {
+    let num_str = number.to_string();
+    run_cmd(
+        "gh",
+        &["pr", "comment", &num_str, "--body", body],
+        Some(gh_config),
+    )?;
+
+    Ok(Act::PullRequest {
+        number,
+        act: PullRequestAct::Commented,
+    })
+}
+
+fn execute_reply_pr(
+    gh_config: &PathBuf,
+    number: u64,
+    comment_id: u64,
+    body: &str,
+) -> Result<Act, String> {
+    let repo = detect_repo()?;
+    let endpoint = format!("repos/{repo}/pulls/{number}/comments");
+    let in_reply_to = comment_id.to_string();
+    run_cmd(
+        "gh",
+        &[
+            "api",
+            &endpoint,
+            "--method",
+            "POST",
+            "-f",
+            &format!("body={body}"),
+            "-F",
+            &format!("in_reply_to={in_reply_to}"),
+        ],
+        Some(gh_config),
+    )?;
+
+    Ok(Act::PullRequest {
+        number,
+        act: PullRequestAct::Replied,
+    })
+}
+
+fn execute_request_review(
+    gh_config: &PathBuf,
+    number: u64,
+    reviewers: &[String],
+) -> Result<Act, String> {
+    let num_str = number.to_string();
+    for r in reviewers {
+        run_cmd(
+            "gh",
+            &["pr", "edit", &num_str, "--add-reviewer", r],
+            Some(gh_config),
+        )?;
+    }
+
+    Ok(Act::PullRequest {
+        number,
+        act: PullRequestAct::RequestedReview {
+            reviewers: reviewers.to_vec(),
+        },
+    })
+}
+
+fn execute_create_issue(
+    gh_config: &PathBuf,
+    title: &str,
+    body: Option<&str>,
+) -> Result<Act, String> {
+    let mut args = vec!["issue", "create", "--title", title];
+    if let Some(b) = body {
+        args.extend(["--body", b]);
+    }
+
+    let output = run_cmd_output("gh", &args, Some(gh_config))?;
+    let number = parse_issue_number_from_url(&output)?;
+
+    Ok(Act::Issue {
+        number,
+        act: IssueAct::Created,
+    })
+}
+
+fn execute_close_issue(gh_config: &PathBuf, number: u64) -> Result<Act, String> {
+    let num_str = number.to_string();
+    run_cmd("gh", &["issue", "close", &num_str], Some(gh_config))?;
+
+    Ok(Act::Issue {
+        number,
+        act: IssueAct::Closed,
+    })
+}
+
+fn execute_comment_issue(gh_config: &PathBuf, number: u64, body: &str) -> Result<Act, String> {
+    let num_str = number.to_string();
+    run_cmd(
+        "gh",
+        &["issue", "comment", &num_str, "--body", body],
+        Some(gh_config),
+    )?;
+
+    Ok(Act::Issue {
+        number,
+        act: IssueAct::Commented,
+    })
+}
+
+/// Run a command, returning an error if it fails.
+fn run_cmd(program: &str, args: &[&str], gh_config: Option<&PathBuf>) -> Result<(), String> {
+    let mut cmd = process::Command::new(program);
+    cmd.args(args);
+    if let Some(config) = gh_config {
+        cmd.env("GH_CONFIG_DIR", config);
+    }
+
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to run {program}: {e}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{program} exited with status {}",
+            status.code().unwrap_or(-1)
+        ))
+    }
+}
+
+/// Run a command, capturing stdout and returning it trimmed.
+fn run_cmd_output(
+    program: &str,
+    args: &[&str],
+    gh_config: Option<&PathBuf>,
+) -> Result<String, String> {
+    let mut cmd = process::Command::new(program);
+    cmd.args(args);
+    if let Some(config) = gh_config {
+        cmd.env("GH_CONFIG_DIR", config);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run {program}: {e}"))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "{program} exited with status {}: {stderr}",
+            output.status.code().unwrap_or(-1)
+        ))
+    }
+}
+
+/// Detect the GitHub repo (owner/name) from the current directory.
+fn detect_repo() -> Result<String, String> {
+    let output = run_cmd_output(
+        "gh",
+        &[
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner",
+            "-q",
+            ".nameWithOwner",
+        ],
+        None,
+    )?;
+    if output.is_empty() {
+        return Err("could not detect GitHub repository from current directory".to_string());
+    }
+    Ok(output)
+}
+
+/// Parse a PR number from a GitHub PR URL (e.g. `https://github.com/owner/repo/pull/45`).
+fn parse_pr_number_from_url(url: &str) -> Result<u64, String> {
+    url.rsplit('/')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| format!("could not parse PR number from: {url}"))
+}
+
+/// Parse an issue number from a GitHub issue URL (e.g. `https://github.com/owner/repo/issues/45`).
+fn parse_issue_number_from_url(url: &str) -> Result<u64, String> {
+    url.rsplit('/')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| format!("could not parse issue number from: {url}"))
+}
+
+/// Format an act for human-readable display.
+fn format_act(act: &Act) -> String {
+    match act {
+        Act::Pushed { branch, sha } => {
+            format!("pushed to {branch} ({sha})")
+        }
+        Act::PullRequest { number, act } => {
+            let verb = match act {
+                PullRequestAct::Created => "created",
+                PullRequestAct::Merged => "merged",
+                PullRequestAct::Commented => "commented on",
+                PullRequestAct::Replied => "replied on",
+                PullRequestAct::RequestedReview { .. } => "requested review on",
+            };
+            format!("{verb} PR #{number}")
+        }
+        Act::Issue { number, act } => {
+            let verb = match act {
+                IssueAct::Created => "created",
+                IssueAct::Closed => "closed",
+                IssueAct::Commented => "commented on",
+            };
+            format!("{verb} issue #{number}")
+        }
+    }
+}
+
 fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
     let voyage = resolve_voyage(storage, voyage_ref)?;
 
@@ -370,9 +878,10 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
                 println!("  Position: {}", b.position.text);
                 println!();
             }
-            LogbookEntry::ActionReport(r) => {
-                println!("── Action {} ── {}", i + 1, r.completed_at);
-                println!("  Outcome: {:?}", r.outcome);
+            LogbookEntry::Action(a) => {
+                println!("── Action {} ── {}", i + 1, a.performed_at);
+                println!("  as: {}", a.identity);
+                println!("  {}", format_act(&a.act));
                 println!();
             }
         }
@@ -392,7 +901,7 @@ fn cmd_complete(storage: &Storage, voyage_ref: &str, summary: Option<&str>) -> R
     }
 
     voyage.status = VoyageStatus::Completed {
-        completed_at: jiff::Timestamp::now(),
+        completed_at: Timestamp::now(),
         summary: summary.map(String::from),
     };
     storage
@@ -439,6 +948,71 @@ fn resolve_voyage(storage: &Storage, reference: &str) -> Result<Voyage, String> 
                 "'{reference}' is ambiguous — matches {n} voyages: {}",
                 ids.join(", ")
             ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_pr_number_from_github_url() {
+        let url = "https://github.com/dyreby/helm/pull/45";
+        assert_eq!(parse_pr_number_from_url(url).unwrap(), 45);
+    }
+
+    #[test]
+    fn parse_issue_number_from_github_url() {
+        let url = "https://github.com/dyreby/helm/issues/12";
+        assert_eq!(parse_issue_number_from_url(url).unwrap(), 12);
+    }
+
+    #[test]
+    fn format_pushed_act() {
+        let act = Act::Pushed {
+            branch: "main".to_string(),
+            sha: "abc1234".to_string(),
+        };
+        assert_eq!(format_act(&act), "pushed to main (abc1234)");
+    }
+
+    #[test]
+    fn format_pr_acts() {
+        let cases = [
+            (PullRequestAct::Created, "created PR #10"),
+            (PullRequestAct::Merged, "merged PR #10"),
+            (PullRequestAct::Commented, "commented on PR #10"),
+            (PullRequestAct::Replied, "replied on PR #10"),
+            (
+                PullRequestAct::RequestedReview {
+                    reviewers: vec!["alice".to_string()],
+                },
+                "requested review on PR #10",
+            ),
+        ];
+        for (pr_act, expected) in cases {
+            let act = Act::PullRequest {
+                number: 10,
+                act: pr_act,
+            };
+            assert_eq!(format_act(&act), expected);
+        }
+    }
+
+    #[test]
+    fn format_issue_acts() {
+        let cases = [
+            (IssueAct::Created, "created issue #5"),
+            (IssueAct::Closed, "closed issue #5"),
+            (IssueAct::Commented, "commented on issue #5"),
+        ];
+        for (issue_act, expected) in cases {
+            let act = Act::Issue {
+                number: 5,
+                act: issue_act,
+            };
+            assert_eq!(format_act(&act), expected);
         }
     }
 }
