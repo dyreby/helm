@@ -1,6 +1,6 @@
 //! Action types: immutable records of something that changed the world.
 //!
-//! One action = one act. Each is a distinct moment in time,
+//! One action = one kind. Each is a distinct moment in time,
 //! recorded in the logbook as it happened.
 //! Failed operations are not recorded — the logbook captures
 //! what happened, not what was attempted.
@@ -33,6 +33,9 @@ pub struct Action {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ActionKind {
+    /// Committed changes locally.
+    Commit { sha: String },
+
     /// Pushed commits to a branch.
     Push { branch: String, sha: String },
 
