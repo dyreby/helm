@@ -11,20 +11,19 @@
 
 use uuid::Uuid;
 
-use crate::model::{Bearing, BearingPlan, Moment, MomentRecord, Observation, Position};
-use crate::observe;
+use crate::model::{Bearing, Moment, MomentRecord, Observation, ObservationPlan, Position};
 
-/// Execute a bearing plan and return the moment record.
+/// Execute an observation plan and return the moment record.
 ///
 /// The caller reviews the moment, then calls `record_bearing` with a position.
 /// The `MomentRecord` carries its own `bearing_id` and `observed_at` timestamp.
-pub fn observe_bearing(plan: &BearingPlan) -> Result<MomentRecord, &'static str> {
+pub fn observe(plan: &ObservationPlan) -> Result<MomentRecord, &'static str> {
     if plan.sources.is_empty() {
-        return Err("bearing plan must have at least one source query");
+        return Err("observation plan must have at least one source query");
     }
 
     let bearing_id = Uuid::new_v4();
-    let observations: Vec<Observation> = plan.sources.iter().map(observe::observe).collect();
+    let observations: Vec<Observation> = plan.sources.iter().map(crate::observe::observe).collect();
     let moment = Moment { observations };
 
     Ok(MomentRecord {
@@ -36,10 +35,10 @@ pub fn observe_bearing(plan: &BearingPlan) -> Result<MomentRecord, &'static str>
 
 /// Assemble a bearing from a plan, moment record, and position text.
 ///
-/// Call this after reviewing the moment from `observe_bearing`.
+/// Call this after reviewing the moment from `observe`.
 /// The bearing carries the plan and position; the moment is stored separately.
 pub fn record_bearing(
-    plan: BearingPlan,
+    plan: ObservationPlan,
     moment_record: &MomentRecord,
     position_text: String,
 ) -> Result<Bearing, &'static str> {
@@ -66,14 +65,14 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::model::{Observation, SourceQuery};
+    use crate::model::{Observation, ObservationPlan, SourceQuery};
 
     #[test]
     fn observe_then_record() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("test.txt"), "hello").unwrap();
 
-        let plan = BearingPlan {
+        let plan = ObservationPlan {
             sources: vec![SourceQuery::Files {
                 scope: vec![dir.path().to_path_buf()],
                 focus: vec![dir.path().join("test.txt")],
@@ -81,7 +80,7 @@ mod tests {
         };
 
         // Step 1: observe.
-        let moment_record = observe_bearing(&plan).unwrap();
+        let moment_record = observe(&plan).unwrap();
 
         // Caller reviews the moment.
         match &moment_record.moment.observations[0] {
@@ -103,22 +102,22 @@ mod tests {
 
     #[test]
     fn rejects_empty_plan() {
-        let plan = BearingPlan { sources: vec![] };
-        let err = observe_bearing(&plan).unwrap_err();
-        assert_eq!(err, "bearing plan must have at least one source query");
+        let plan = ObservationPlan { sources: vec![] };
+        let err = observe(&plan).unwrap_err();
+        assert_eq!(err, "observation plan must have at least one source query");
     }
 
     #[test]
     fn rejects_empty_position() {
         let dir = TempDir::new().unwrap();
-        let plan = BearingPlan {
+        let plan = ObservationPlan {
             sources: vec![SourceQuery::Files {
                 scope: vec![dir.path().to_path_buf()],
                 focus: vec![],
             }],
         };
 
-        let moment_record = observe_bearing(&plan).unwrap();
+        let moment_record = observe(&plan).unwrap();
         let err = record_bearing(plan, &moment_record, "  ".to_string()).unwrap_err();
         assert_eq!(err, "position text cannot be empty");
     }
@@ -126,14 +125,14 @@ mod tests {
     #[test]
     fn survey_only_bearing() {
         let dir = TempDir::new().unwrap();
-        let plan = BearingPlan {
+        let plan = ObservationPlan {
             sources: vec![SourceQuery::Files {
                 scope: vec![dir.path().to_path_buf()],
                 focus: vec![],
             }],
         };
 
-        let moment_record = observe_bearing(&plan).unwrap();
+        let moment_record = observe(&plan).unwrap();
         let bearing = record_bearing(plan, &moment_record, "Survey only.".to_string()).unwrap();
 
         // The bearing doesn't carry the moment anymore — just verify it sealed.

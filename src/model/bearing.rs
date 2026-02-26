@@ -17,8 +17,8 @@ pub struct Bearing {
     /// Unique identifier. Links this bearing to its moment in `moments.jsonl`.
     pub id: Uuid,
 
-    /// The plan that was executed.
-    pub plan: BearingPlan,
+    /// The observation plan that was executed.
+    pub plan: ObservationPlan,
 
     /// The agent's or user's read on the state of the world.
     pub position: Position,
@@ -28,7 +28,10 @@ pub struct Bearing {
 }
 
 /// What to observe, described as scope and focus per source kind.
+///
+/// This is the input to an observation.
+/// It becomes part of the bearing only after recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BearingPlan {
+pub struct ObservationPlan {
     pub sources: Vec<SourceQuery>,
 }
