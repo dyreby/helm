@@ -29,10 +29,10 @@ Each mark describes a domain of observable reality — not a mechanism. Commands
 ## Principles
 
 - **Non-interactive.** Arguments in, output out. Commands compose with pipes, files, and scripts.
-- **Append-only.** The logbook is a trail, not a workspace.
 - **Caller-agnostic.** Helm serves whoever calls it — human, agent, or script.
-- **Local.** No syncing, no shared state.
 - **Trust the voyage.** The logbook is always there when I want to look.
+- **Append-only.** The logbook is a trail, not a workspace.
+- **Local.** No syncing, no shared state.
 - **Bring your own tools.** Helm orchestrates; external tools do the specialized work.
 - **Joy matters.** Language shapes how a tool feels to use. The nautical theme is helpful and fun. ⛵️
 
