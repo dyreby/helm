@@ -70,7 +70,7 @@ impl Storage {
     }
 
     /// Updates a voyage's metadata on disk.
-    /// Used by voyage lifecycle commands (complete, pause) — not yet wired to CLI.
+    // TODO(#30): remove allow when voyage complete is wired to CLI.
     #[allow(dead_code)]
     pub fn update_voyage(&self, voyage: &Voyage) -> Result<()> {
         let path = self.voyage_dir(voyage.id).join("voyage.json");

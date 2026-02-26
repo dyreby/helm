@@ -3,8 +3,7 @@
 //! These types represent the conceptual architecture:
 //! voyages, bearings, observations, sightings, positions, and actions.
 
-// Some types are defined for future features (actions, position history)
-// and re-exported here for tests and readiness.
+// TODO(#8): remove allow when action types are wired to CLI.
 #![allow(unused_imports)]
 
 mod action;
