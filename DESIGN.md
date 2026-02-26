@@ -58,7 +58,8 @@ Produces an `Observation`:
 ```
 
 The mark says *what* was looked at (a Rust project at `.`).
-The sighting contains the full tree and file contents.
+The sighting contains the full directory tree (survey) and documentation file contents (inspection).
+Source code is not inspected — that's what `Mark::Files` is for on subsequent bearings.
 
 ### 3. Record a bearing
 
@@ -186,7 +187,7 @@ Mark::RustProject {
 ```
 
 `Files` separates scope (survey) from focus (inspect) as flat vectors.
-`RustProject` is a composite — surveys the tree and inspects all source files unconditionally.
+`RustProject` is a composite — surveys the full tree and inspects documentation files (README, VISION, CONTRIBUTING, agent instructions, etc.). Source code is left for targeted `Mark::Files` queries.
 
 #### Planned: GitHub
 
@@ -284,7 +285,7 @@ Commands are how Helm fetches data; marks describe what Helm is looking at.
 | Kind | Survey (broad scan) | Inspect (deep dive) | Status |
 |------|--------------------|--------------------|--------|
 | **Files** | Directory trees with metadata | File contents | Implemented |
-| **RustProject** | Full project tree | All source files | Implemented |
+| **RustProject** | Full project tree | Documentation files | Implemented |
 | **GitHub** | PR/issue metadata, check summaries | Diffs, comment bodies, threads | Planned |
 | **Context** | — | — | Planned |
 | **Web** | Status and headers | Response bodies | Future |
