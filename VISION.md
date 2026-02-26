@@ -34,7 +34,7 @@ Each mark describes a domain of observable reality — not a mechanism. Commands
 - **Local.** No syncing, no shared state.
 - **I set the course; the crew sails; Helm keeps the log.** Review the logbook along the way.
 - **Bring your own tools.** Helm orchestrates; external tools do the specialized work.
-- **Joy matters.** This is a daily tool. The language, the flow, and the rhythm should feel intentional and calm.
+- **Joy matters.** Language shapes how a tool feels to use. The nautical theme is helpful and fun. ⛵️
 
 ## Inspirations
 
