@@ -24,7 +24,7 @@ Voyage IDs accept unambiguous prefixes (`a3b` instead of the full UUID).
 |------|------|
 | **Voyage** | A unit of work with intent, a logbook, and an outcome |
 | **Logbook** | Append-only sequence of bearings and actions |
-| **Bearing** | Immutable record: observations + position |
+| **Bearing** | Immutable record: subjects + position. References observations stored separately. |
 | **Observation** | Self-contained: subject + sighting + timestamp |
 | **Subject** | What you pointed the spyglass at (a source kind + scope/focus) |
 | **Sighting** | What you saw |
