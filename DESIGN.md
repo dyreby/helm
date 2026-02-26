@@ -1,23 +1,136 @@
 # Design
 
-How the vision maps to Rust types and the decisions behind them.
+The current design for Helm. Serves [VISION.md](VISION.md). The vision serves [CHARTER.md](CHARTER.md).
 
-See [VISION.md](VISION.md) for the concepts and the why.
+If this design changes, that's just work.
 
-## Type Map
+## Terminology
 
-| Concept | Type | Module |
-|---------|------|--------|
-| Voyage | `Voyage`, `VoyageKind`, `VoyageStatus` | `model::voyage` |
-| Bearing | `Bearing` | `model::bearing` |
-| Observation | `Observation` | `model::source` |
-| Mark | `Mark` | `model::source` |
-| Sighting | `Sighting` | `model::source` |
-| Reading | `Reading`, `ReadingAttempt`, `ReadingSource` | `model::reading` |
-| Action | `Action`, `Act` | `model::action` |
-| Logbook entry | `LogbookEntry` | `model` |
+The nautical metaphor is load-bearing. These terms are used consistently across code, CLI, and docs.
 
-## Voyages
+| Term | What it means | Rust type |
+|------|---------------|-----------|
+| **Voyage** | A unit of work with intent, logbook, and outcome | `Voyage` |
+| **Logbook** | Append-only record of a voyage's bearings and actions | `Vec<LogbookEntry>` |
+| **Bearing** | Immutable snapshot: observations sealed with a reading | `Bearing` |
+| **Observation** | What you looked at and what you saw, timestamped | `Observation` |
+| **Mark** | What you pointed the spyglass at — a domain of observable reality | `Mark` |
+| **Sighting** | The raw data returned when observing a mark | `Sighting` |
+| **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
+| **Action** | Something that changed the world, recorded after the fact | `Action` |
+| **Act** | The specific thing that was done (push, create PR, comment) | `Act` |
+| **Scope** | What to survey — the broad view (directories, PRs) | Mark fields |
+| **Focus** | What to inspect — the deep view (specific files, diffs) | Mark fields |
+
+Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
+
+## Example Flow: Resolving an Issue
+
+A complete voyage, from start to finish.
+
+### 1. Start the voyage
+
+```bash
+$ helm voyage new "Resolve #42: fix widget crash" --kind resolve-issue
+a3b0fc12-...
+```
+
+Creates:
+```
+~/.helm/voyages/a3b0fc12-.../
+  voyage.json    # { kind: ResolveIssue, intent: "Resolve #42: ...", status: Active }
+```
+
+### 2. Observe the world
+
+```bash
+$ helm observe rust-project . --out obs.json
+Observation written to obs.json
+```
+
+Produces an `Observation`:
+```
+{
+  mark: Mark::RustProject { root: "." },
+  sighting: Sighting::Files { survey: [...], inspections: [...] },
+  observed_at: "2026-02-26T17:00:00Z"
+}
+```
+
+The mark says *what* was looked at (a Rust project at `.`).
+The sighting contains the full tree and file contents.
+
+### 3. Record a bearing
+
+```bash
+$ helm record a3b --reading "Widget module has a null check missing in init(). Test coverage exists but doesn't hit this path." --observation obs.json
+Bearing recorded for voyage a3b0fc12
+Reading: Widget module has a null check missing in init()...
+```
+
+Appends a `LogbookEntry::Bearing` to `logbook.jsonl`:
+```
+{
+  observations: [{ mark: RustProject { root: "." }, sighting: ..., observed_at: ... }],
+  reading: { text: "Widget module has a null check...", history: [] },
+  taken_at: "2026-02-26T17:01:00Z"
+}
+```
+
+The bearing is the durable record. The sighting is heavy; the mark and reading are light.
+Scanning the logbook later, the bearing reads: *"Looked at the Rust project. Widget module has a null check missing."*
+
+### 4. Do the work, then act
+
+```bash
+$ helm act a3b --as john-agent push --branch fix-widget --message "Fix null check in widget init"
+Action recorded for voyage a3b0fc12
+  as: john-agent
+  pushed to fix-widget (abc1234)
+
+$ helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget crash" --reviewer dyreby
+Action recorded for voyage a3b0fc12
+  as: john-agent
+  created PR #45
+```
+
+Each act executes the operation *and* records it. The logbook now has two `LogbookEntry::Action` entries.
+
+### 5. Complete the voyage
+
+```bash
+$ helm voyage complete a3b --summary "Fixed null check in widget init. PR #45 merged."
+Voyage a3b0fc12 completed
+Summary: Fixed null check in widget init. PR #45 merged.
+```
+
+### The logbook tells the story
+
+```bash
+$ helm voyage log a3b
+Voyage: Resolve #42: fix widget crash
+Created: 2026-02-26T17:00:00Z
+Status: completed (2026-02-26T17:30:00Z)
+Summary: Fixed null check in widget init. PR #45 merged.
+
+── Bearing 1 ── 2026-02-26T17:01:00Z
+  Mark: RustProject @ .
+  Reading: Widget module has a null check missing in init().
+
+── Action 2 ── 2026-02-26T17:15:00Z
+  as: john-agent
+  pushed to fix-widget (abc1234)
+
+── Action 3 ── 2026-02-26T17:16:00Z
+  as: john-agent
+  created PR #45
+```
+
+Marks, readings, actions. The voyage's story, without replaying raw sightings.
+
+## Types
+
+### Voyage
 
 ```rust
 Voyage {
@@ -29,11 +142,9 @@ Voyage {
 }
 ```
 
-A voyage is created, worked, and completed.
-The `intent` is freeform — it's whatever the human wrote when starting the voyage.
 `VoyageKind` frames the first bearing but doesn't constrain the voyage after that.
 
-## Bearings
+### Bearing
 
 ```rust
 Bearing {
@@ -43,11 +154,10 @@ Bearing {
 }
 ```
 
-A bearing seals observations with a reading.
-Observations you took but didn't find useful are simply not included.
-Bearings have no ID — they're identified by position in the logbook stream.
+Seals observations with a reading.
+Bearings have no ID — identified by position in the logbook stream.
 
-## Observations
+### Observation
 
 ```rust
 Observation {
@@ -57,19 +167,12 @@ Observation {
 }
 ```
 
-Self-contained: what you looked at, what you saw, when.
-The mark carries enough structure that the logbook tells a story without replaying the sighting.
+Self-contained. Take as many as you want; only the ones you choose to record become part of a bearing.
 
-## Marks
+### Mark
 
-A mark is what you pointed the spyglass at.
-Each variant describes a domain of observable reality with enough detail to reconstruct *what was observed* at a glance.
-
-The principle: **marks + readings should tell the logbook story without replaying sightings.**
-When scanning bearings, you should know what was looked at and what was concluded.
-The sighting is the raw evidence — useful for the current session, but not needed for the narrative.
-
-### Implemented
+Each variant describes a domain of observable reality.
+Adding a new source kind means adding a `Mark` variant and implementing its observation logic.
 
 ```rust
 Mark::Files {
@@ -78,43 +181,34 @@ Mark::Files {
 }
 
 Mark::RustProject {
-    root: PathBuf,          // project root, walks tree + reads source files
+    root: PathBuf,
 }
 ```
 
-`Files` separates scope (survey) from focus (inspect).
-`RustProject` is a composite — it surveys the tree and inspects all source files unconditionally.
-Both use flat vectors, not the scope-to-focus map described in VISION.md.
-The flat model is simpler and hasn't created friction yet.
+`Files` separates scope (survey) from focus (inspect) as flat vectors.
+`RustProject` is a composite — surveys the tree and inspects all source files unconditionally.
 
-### Planned
-
-**GitHub** — PRs, issues, checks, comments.
-Needs enough mark structure to distinguish "looked at PR #42 metadata" from "read the inline review comments on PR #42."
-Design of scope/focus semantics for GitHub is the prerequisite to building the observation logic.
-
-Candidate structure:
+#### Planned: GitHub
 
 ```rust
 Mark::GitHub {
-    target: GitHubTarget,   // what kind of thing
-    focus: Vec<GitHubFocus>, // what specifically to inspect
+    target: GitHubTarget,       // PullRequest(u64) | Issue(u64) | Repository
+    focus: Vec<GitHubFocus>,    // Diff | InlineComments | Checks | Comments | Approvals
 }
 ```
 
-Where `GitHubTarget` might be `PullRequest(u64)`, `Issue(u64)`, `Repository`, etc.
-And `GitHubFocus` might be `Diff`, `InlineComments`, `Checks`, `Comments`, `Approvals`, etc.
+Enough structure to distinguish "looked at PR #42 metadata" from "read the inline review comments on PR #42."
+This is a sketch — the actual types will be worked through when building the GitHub mark.
 
-This is a sketch — the actual types need to be worked through when building the GitHub mark.
+#### Planned: Context
 
-**Context** — human-provided information with no system-observable source.
+Human-provided information with no system-observable source.
 Offline conversations, decisions made outside the tool, background knowledge.
 No sighting to fetch — just a mark that describes what the context is about, and a reading the human attaches.
 
-## Sightings
+### Sighting
 
-What was seen when observing a mark.
-One `Sighting` variant per mark domain.
+One variant per mark domain. The raw data returned by observation.
 
 ```rust
 Sighting::Files {
@@ -123,35 +217,30 @@ Sighting::Files {
 }
 ```
 
-`DirectorySurvey` contains a path and a list of `DirectoryEntry` (name, is_dir, size).
-`FileInspection` contains a path and `FileContent` (Text, Binary, or Error).
+Supporting types:
+- `DirectorySurvey` — path + list of `DirectoryEntry` (name, is_dir, size)
+- `FileInspection` — path + `FileContent` (Text, Binary, or Error)
 
-`RustProject` reuses `Sighting::Files` — same structure, different mark that produced it.
+`RustProject` reuses `Sighting::Files`.
 
-No `Sighting::GitHub` exists yet.
-
-## Readings
+### Reading
 
 ```rust
 Reading {
-    text: String,
-    history: Vec<ReadingAttempt>,
+    text: String,                       // the accepted interpretation
+    history: Vec<ReadingAttempt>,       // prior attempts that were challenged
 }
 
 ReadingAttempt {
     text: String,
-    source: ReadingSource,          // Agent | User
-    challenged_with: Option<String>,
+    source: ReadingSource,              // Agent | User
+    challenged_with: Option<String>,    // feedback that caused rejection
 }
 ```
 
-The reading is the interpretation of what was observed.
-`text` is the accepted reading.
-`history` tracks prior attempts that were challenged — alignment gaps, not failures.
+The challenge history captures alignment gaps in the collaboration, not failures.
 
-`ReadingSource` records who authored each attempt (agent or human).
-
-## Actions
+### Action
 
 ```rust
 Action {
@@ -162,40 +251,67 @@ Action {
 }
 ```
 
-Actions are things that changed the world.
-Only successful operations are recorded — the logbook captures what happened, not what was attempted.
+Only successful operations are recorded.
+The logbook captures what happened, not what was attempted.
 
-### Act types
-
-Grouped by target, not by verb.
+Act types are grouped by target, not by verb:
 
 ```rust
 Act::Pushed { branch, sha }
-
 Act::PullRequest { number, act: PullRequestAct }
-// PullRequestAct: Created | Merged | Commented | Replied | RequestedReview
-
 Act::Issue { number, act: IssueAct }
-// IssueAct: Created | Closed | Commented
 ```
 
-`Replied` is distinct from `Commented` — "I addressed inline feedback" is a meaningful signal in the logbook.
+`PullRequestAct`: Created, Merged, Commented, Replied, RequestedReview.
+`IssueAct`: Created, Closed, Commented.
 
-Identity selects which GitHub account to use.
-Each identity has its own `gh` config directory under `~/.helm/gh-config/<identity>/`.
+`Replied` is distinct from `Commented` — "I addressed inline feedback" is a meaningful signal when reading the logbook.
 
-## The Logbook
+### Logbook
 
 ```rust
 LogbookEntry::Bearing(Bearing)
 LogbookEntry::Action(Action)
 ```
 
-Append-only JSONL.
-One file per voyage at `~/.helm/voyages/<uuid>/logbook.jsonl`.
-Tagged enum so each line is self-describing.
+Append-only JSONL. Tagged enum so each line is self-describing.
 
-Voyages also have `voyage.json` for metadata.
+## Source Kinds
+
+Each mark describes a domain of observable reality — not a mechanism.
+Commands are how Helm fetches data; marks describe what Helm is looking at.
+
+| Kind | Survey (broad scan) | Inspect (deep dive) | Status |
+|------|--------------------|--------------------|--------|
+| **Files** | Directory trees with metadata | File contents | Implemented |
+| **RustProject** | Full project tree | All source files | Implemented |
+| **GitHub** | PR/issue metadata, check summaries | Diffs, comment bodies, threads | Planned |
+| **Context** | — | — | Planned |
+| **Web** | Status and headers | Response bodies | Future |
+| **Search** | Hit lists with locations | Matches with context | Future |
+
+Web-based kinds graduate to their own domain when their scope/focus semantics are rich enough.
+GitHub is the first domain that graduated.
+
+Whether Search is a peer kind or something that layers on top of other kinds is unresolved.
+
+## The Agent Contract
+
+The agent is stateless. Every call receives explicit context and returns a structured result. No ongoing session. No hidden memory.
+
+| Phase | Input | Output |
+|-------|-------|--------|
+| **Take Bearing** | Bearing history (observations + readings) | A reading |
+| **Correct Reading** | Bearing history + human feedback | A revised reading |
+| **Correct Course** | Current bearing + history + constraints | New marks to observe, an action plan, or abort |
+
+Structural constraints — not instructions:
+- The agent never executes tools.
+- The agent never sees raw sightings from prior bearings.
+- The agent never expands scope without human approval.
+
+A reading describes; it never prescribes.
+If it feels wrong, the human challenges it and the agent re-generates.
 
 ## Storage
 
@@ -210,24 +326,9 @@ Voyages also have `voyage.json` for metadata.
 ```
 
 Observations are currently inlined in bearings.
-See #49 for the planned separation of observations into prunable artifacts.
-
-## The Agent Contract
-
-The agent is stateless.
-Every call receives explicit context and returns a structured result.
-
-- **Take Bearing**: receives bearing history → produces a reading.
-- **Correct Reading**: receives bearing history + feedback → produces a revised reading.
-- **Correct Course**: receives current bearing + history → returns new marks to observe, an action plan, or abort.
-
-The agent never executes tools.
-The agent never sees raw sightings from prior bearings.
-The agent never expands scope without human approval.
+See #49 for the planned separation into prunable artifacts.
 
 ## CLI
-
-Helm is CLI-only. The interface:
 
 ```
 helm voyage new <intent> [--kind open-waters|resolve-issue]
@@ -250,10 +351,9 @@ helm act <voyage-id> --as <identity> <act-subcommand>
 ## Open Questions
 
 - **Scope/focus modeling**: flat vectors work for Files.
-  Will GitHub need the map structure VISION describes, or can it stay flat?
+  Will GitHub need a richer structure, or can it stay flat?
 - **Observation storage** (#49): bearings currently inline observations.
-  Planned: store observations as separate artifacts, prunable without breaking the logbook narrative.
+  Planned: store separately, prunable without breaking the narrative.
 - **Context mark**: structure TBD.
-  Minimum viable: a description string and a reading. May need more structure as usage reveals patterns.
-- **Search as a mark kind**: peer to other marks, or cross-cutting?
-  VISION raises this. No pressure to resolve it yet.
+  Minimum viable: a description string and a reading.
+- **Search**: peer kind or cross-cutting layer?
