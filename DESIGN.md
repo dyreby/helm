@@ -59,7 +59,7 @@ Produces an `Observation`:
 
 The mark says *what* was looked at (a Rust project at `.`).
 The sighting contains the full directory tree (survey) and documentation file contents (inspection).
-Source code is not inspected — that's what `Mark::Files` is for on subsequent bearings.
+Source code is not read — that's what `Mark::Files` is for on subsequent bearings.
 
 ### 3. Record a bearing
 
