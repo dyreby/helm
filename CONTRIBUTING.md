@@ -1,5 +1,17 @@
 # Contributing
 
+## Before Pushing
+
+Run the full CI locally. These match the checks in `.github/workflows/ci.yml`:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+Fix any issues before pushing. Don't rely on CI to catch what you can catch locally.
+
 ## How Work Is Organized
 
 Work in this project follows a nautical metaphor that mirrors the tool itself.
