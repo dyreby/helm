@@ -12,7 +12,7 @@ use storage::Storage;
 
 fn main() {
     let root = Storage::default_root().unwrap_or_else(|| {
-        eprintln!("Could not determine home directory.");
+        eprintln!("Could not determine home directory");
         process::exit(1);
     });
 

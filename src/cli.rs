@@ -360,7 +360,7 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
         .map_err(|e| format!("failed to list voyages: {e}"))?;
 
     if voyages.is_empty() {
-        println!("No active voyages.");
+        println!("No active voyages");
         return Ok(());
     }
 
@@ -852,7 +852,7 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
         .map_err(|e| format!("failed to load logbook: {e}"))?;
 
     if entries.is_empty() {
-        println!("Logbook is empty.");
+        println!("Logbook is empty");
         return Ok(());
     }
 
