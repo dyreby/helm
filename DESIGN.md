@@ -67,7 +67,7 @@ Produces an `Observation`:
 ```
 {
   mark: Mark::RustProject { root: "." },
-  sighting: Sighting::Files { survey: [...], inspections: [...] },
+  sighting: Sighting::Files { directories: [...], files: [...] },
   observed_at: "2026-02-26T17:00:00Z"
 }
 ```
@@ -231,11 +231,11 @@ Mirrors `Mark`. One variant per domain, containing the raw data from observation
 enum Sighting {
     /// Results from observing a Files or RustProject mark.
     Files {
-        /// Directory listings from surveyed paths.
-        survey: Vec<DirectorySurvey>,
+        /// Directory listings from scope paths.
+        directories: Vec<DirectoryListing>,
 
-        /// File contents from focused/inspected paths.
-        inspections: Vec<FileInspection>,
+        /// File contents from focus paths.
+        files: Vec<FileContents>,
     },
 
     // ── Planned ──
@@ -243,8 +243,8 @@ enum Sighting {
     // GitHub { ... },
 }
 
-/// A directory listing produced by surveying a path.
-struct DirectorySurvey {
+/// A directory listing: what's at this path.
+struct DirectoryListing {
     path: PathBuf,
     entries: Vec<DirectoryEntry>,
 }
@@ -256,13 +256,21 @@ struct DirectoryEntry {
     size_bytes: Option<u64>,
 }
 
-/// The contents of a file produced by inspecting a path.
-struct FileInspection {
+/// A file and what was in it.
+struct FileContents {
     path: PathBuf,
     content: FileContent,
 }
 
 /// What was found when reading a file.
+///
+/// No file-type field (Rust, Markdown, TOML, etc.) — the file extension
+/// is in the `path` and the consumer knows what to do with the content.
+/// Adding a kind enum would duplicate derivable information and create
+/// a maintenance surface for every new file type encountered.
+///
+/// If structured parsing is ever needed (Rust AST, Markdown sections),
+/// that's a different sighting type, not a field here.
 enum FileContent {
     /// UTF-8 text content.
     Text { content: String },
