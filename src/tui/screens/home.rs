@@ -89,8 +89,7 @@ impl HomeScreen {
                     HomeItem::Voyage(v) => {
                         let status = match v.status {
                             VoyageStatus::Active => "active",
-                            VoyageStatus::Paused => "paused",
-                            VoyageStatus::Completed => "done",
+                            VoyageStatus::Completed { .. } => "completed",
                         };
                         let label = if v.intent.is_empty() {
                             "Open Waters".to_string()

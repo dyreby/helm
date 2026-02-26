@@ -32,9 +32,12 @@ pub enum VoyageStatus {
     /// Work is in progress.
     Active,
 
-    /// Paused, can be resumed. The world may have changed.
-    Paused,
+    /// The voyage is complete — returned to port, logbook sealed.
+    Completed {
+        /// When the voyage was completed.
+        completed_at: Timestamp,
 
-    /// Completed with an outcome.
-    Completed,
+        /// What was accomplished or learned.
+        summary: Option<String>,
+    },
 }

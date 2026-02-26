@@ -60,7 +60,7 @@ pub enum Command {
     /// Reads observations from `--observation` files or stdin (single observation),
     /// attaches the position, and writes the bearing to the logbook.
     Record {
-        /// Voyage ID (full UUID or unambiguous prefix).
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
 
         /// Your read on the state of the world.
@@ -94,8 +94,21 @@ pub enum VoyageCommand {
     /// Displays observations and positions for each bearing, and outcomes for each action.
     /// The logbook tells the story through positions.
     Log {
-        /// Voyage ID (full UUID or unambiguous prefix).
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
+    },
+
+    /// Mark a voyage as completed.
+    ///
+    /// Updates the voyage status and records a completion entry in the logbook.
+    /// Optionally accepts a summary of what was accomplished or learned.
+    Complete {
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
+        voyage: String,
+
+        /// Summary of what was accomplished or learned.
+        #[arg(long)]
+        summary: Option<String>,
     },
 }
 
@@ -147,6 +160,9 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             VoyageCommand::New { intent, kind } => cmd_new(storage, &intent, &kind),
             VoyageCommand::List => cmd_list(storage),
             VoyageCommand::Log { voyage } => cmd_log(storage, &voyage),
+            VoyageCommand::Complete { voyage, summary } => {
+                cmd_complete(storage, &voyage, summary.as_deref())
+            }
         },
         Command::Observe { ref source, out } => cmd_observe(source, out),
         Command::Record {
@@ -187,8 +203,7 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
     for v in &voyages {
         let status = match v.status {
             VoyageStatus::Active => "active",
-            VoyageStatus::Paused => "paused",
-            VoyageStatus::Completed => "completed",
+            VoyageStatus::Completed { .. } => "completed",
         };
         let kind = match v.kind {
             VoyageKind::OpenWaters => "open-waters",
@@ -288,8 +303,19 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
     let voyage = resolve_voyage(storage, voyage_ref)?;
 
     println!("Voyage: {}", voyage.intent);
-    println!("Status: {:?}", voyage.status);
     println!("Created: {}", voyage.created_at);
+    match &voyage.status {
+        VoyageStatus::Active => println!("Status: active"),
+        VoyageStatus::Completed {
+            completed_at,
+            summary,
+        } => {
+            println!("Status: completed ({completed_at})");
+            if let Some(s) = summary {
+                println!("Summary: {s}");
+            }
+        }
+    }
     println!();
 
     let entries = storage
@@ -331,6 +357,33 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
                 println!();
             }
         }
+    }
+
+    Ok(())
+}
+
+fn cmd_complete(storage: &Storage, voyage_ref: &str, summary: Option<&str>) -> Result<(), String> {
+    let mut voyage = resolve_voyage(storage, voyage_ref)?;
+
+    if matches!(voyage.status, VoyageStatus::Completed { .. }) {
+        return Err(format!(
+            "voyage {} is already completed",
+            &voyage.id.to_string()[..8]
+        ));
+    }
+
+    voyage.status = VoyageStatus::Completed {
+        completed_at: jiff::Timestamp::now(),
+        summary: summary.map(String::from),
+    };
+    storage
+        .update_voyage(&voyage)
+        .map_err(|e| format!("failed to update voyage: {e}"))?;
+
+    let short_id = &voyage.id.to_string()[..8];
+    eprintln!("Voyage {short_id} completed");
+    if let Some(s) = summary {
+        eprintln!("Summary: {s}");
     }
 
     Ok(())
