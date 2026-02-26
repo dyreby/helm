@@ -1,6 +1,6 @@
 # Design
 
-Implementation of the [vision](VISION.md). This is the disposable layer — it changes as understanding deepens.
+Implementation of the [vision](VISION.md).
 
 ## CLI Grammar
 
