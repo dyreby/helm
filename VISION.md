@@ -4,7 +4,7 @@ Helm is how I want to work with a coding agent.
 
 ## Why
 
-An autonomous agent with tools is the wrong shape for how I want to collaborate with an LLM. I want to set the course, trust the agent to crew the voyage, and know what happened — not approve every step.
+An autonomous agent with tools is the wrong shape for how I want to collaborate with an LLM. I want to set the course, trust the agent to crew the voyage, and review the logbook when they get back.
 
 ## Voyages
 
