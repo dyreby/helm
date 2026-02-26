@@ -32,9 +32,9 @@ pub struct Observation {
 pub enum Mark {
     /// Filesystem structure and content.
     ///
-    /// Dumb and literal: no recursion, no filtering, no domain knowledge.
-    /// You tell it exactly what to list and read.
-    /// Domain marks like `RustProject` are where the smarts live.
+    /// Lists directories and reads files exactly as specified.
+    /// No recursion, filtering, or domain awareness.
+    /// Domain-specific marks like `RustProject` add that intelligence.
     ///
     /// `list`: directories to list immediate contents of.
     /// `read`: files to read.

@@ -167,9 +167,9 @@ you know *what* was looked at without replaying the sighting.
 enum Mark {
     /// Filesystem structure and content.
     ///
-    /// Dumb and literal: no recursion, no filtering, no domain knowledge.
-    /// You tell it exactly what to list and read.
-    /// Domain marks like `RustProject` are where the smarts live.
+    /// Lists directories and reads files exactly as specified.
+    /// No recursion, filtering, or domain awareness.
+    /// Domain-specific marks like `RustProject` add that intelligence.
     ///
     /// `list`: directories to list immediate contents of.
     /// `read`: files to read.
@@ -301,8 +301,8 @@ Sighting::Files {
 }
 ```
 
-`listings` has the full tree — every file appears here so you know it exists and how big it is.
-`contents` has only documentation contents. Source files like `main.rs` show up in the listing but aren't read.
+`RustProject` walks the tree, so `listings` covers every directory — each file appears in its parent's listing so you know it exists and how big it is.
+`contents` has only documentation. Source files like `main.rs` show up in listings but aren't read.
 
 ### Bearing
 
