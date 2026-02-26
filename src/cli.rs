@@ -538,9 +538,7 @@ fn act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<ActionKind, String> 
             reviewer,
         } => create_pr(gh_config, branch, title, body.as_deref(), base, reviewer),
         ActCommand::MergePullRequest { number } => merge_pr(gh_config, *number),
-        ActCommand::CommentOnPullRequest { number, body } => {
-            comment_pr(gh_config, *number, body)
-        }
+        ActCommand::CommentOnPullRequest { number, body } => comment_pr(gh_config, *number, body),
         ActCommand::ReplyOnPullRequest {
             number,
             comment_id,
@@ -549,13 +547,9 @@ fn act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<ActionKind, String> 
         ActCommand::RequestReview { number, reviewer } => {
             request_review(gh_config, *number, reviewer)
         }
-        ActCommand::CreateIssue { title, body } => {
-            create_issue(gh_config, title, body.as_deref())
-        }
+        ActCommand::CreateIssue { title, body } => create_issue(gh_config, title, body.as_deref()),
         ActCommand::CloseIssue { number } => close_issue(gh_config, *number),
-        ActCommand::CommentOnIssue { number, body } => {
-            comment_issue(gh_config, *number, body)
-        }
+        ActCommand::CommentOnIssue { number, body } => comment_issue(gh_config, *number, body),
     }
 }
 
@@ -714,11 +708,7 @@ fn close_issue(gh_config: &PathBuf, number: u64) -> Result<ActionKind, String> {
     })
 }
 
-fn comment_issue(
-    gh_config: &PathBuf,
-    number: u64,
-    body: &str,
-) -> Result<ActionKind, String> {
+fn comment_issue(gh_config: &PathBuf, number: u64, body: &str) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd(
         "gh",
