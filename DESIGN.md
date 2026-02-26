@@ -59,7 +59,12 @@ Produces an `Observation`:
 
 The mark says *what* was looked at (a Rust project at `.`).
 The sighting contains the full directory tree (survey) and documentation file contents (inspection).
-Source code is not read — that's what `Mark::Files` is for on subsequent bearings.
+
+Source code is not read. This is deliberate — `RustProject` is for orientation.
+It answers "what is this project and how is it structured?" not "what does the code do?"
+Once you know which files matter, use `Mark::Files` with focused paths to read them.
+Orient first, then focus. Most voyages start with a `RustProject` observation
+and narrow from there.
 
 ### 3. Record a bearing
 
