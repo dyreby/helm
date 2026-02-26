@@ -103,7 +103,12 @@ Scanning the logbook later, the bearing reads: *"Looked at the Rust project. Wid
 ### 4. Do the work, then act
 
 ```bash
-$ helm act a3b --as john-agent push --branch fix-widget --message "Fix null check in widget init"
+$ helm act a3b --as john-agent commit --message "Fix null check in widget init"
+Action recorded for voyage a3b0fc12
+  as: john-agent
+  committed (abc1234)
+
+$ helm act a3b --as john-agent push --branch fix-widget
 Action recorded for voyage a3b0fc12
   as: john-agent
   pushed to fix-widget (abc1234)
@@ -114,7 +119,7 @@ Action recorded for voyage a3b0fc12
   created PR #45
 ```
 
-Each act executes the operation *and* records it. The logbook now has two `LogbookEntry::Action` entries.
+Each act executes the operation *and* records it. The logbook now has three `LogbookEntry::Action` entries.
 
 ### 5. Complete the voyage
 
@@ -137,11 +142,15 @@ Summary: Fixed null check in widget init. PR #45 merged.
   Mark: RustProject @ .
   Reading: Widget module has a null check missing in init().
 
-── Action 2 ── 2026-02-26T17:15:00Z
+── Action 2 ── 2026-02-26T17:14:00Z
+  as: john-agent
+  committed (abc1234)
+
+── Action 3 ── 2026-02-26T17:15:00Z
   as: john-agent
   pushed to fix-widget (abc1234)
 
-── Action 3 ── 2026-02-26T17:16:00Z
+── Action 4 ── 2026-02-26T17:16:00Z
   as: john-agent
   created PR #45
 ```
@@ -408,6 +417,9 @@ struct Action {
 /// natural question than "what was commented on." The target is the
 /// primary key; the verb is secondary.
 enum Act {
+    /// Committed changes locally.
+    Committed { sha: String },
+
     /// Pushed commits to a branch.
     Pushed { branch: String, sha: String },
 

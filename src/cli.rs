@@ -48,7 +48,8 @@ Stopping mid-voyage? Record a bearing so the next session has context:
   helm record a3b --reading "Halfway through, refactoring widget module" --observation obs.json
 
 Record actions that change the world:
-  helm act a3b --as john-agent push --branch fix-widget --sha abc1234
+  helm act a3b --as john-agent commit --message "Fix null check in widget init"
+  helm act a3b --as john-agent push --branch fix-widget
   helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget"
   helm act a3b --as john-agent merge-pull-request 45
 
@@ -128,6 +129,16 @@ pub enum Command {
 /// Act subcommands — one per kind of action.
 #[derive(Debug, Subcommand)]
 pub enum ActCommand {
+    /// Commit staged and unstaged changes.
+    ///
+    /// Stages all changes (`git add -A`) and commits with the given message.
+    /// Records the resulting commit SHA in the logbook.
+    Commit {
+        /// Commit message.
+        #[arg(long)]
+        message: String,
+    },
+
     /// Push commits to a branch.
     Push {
         /// Branch name.
@@ -521,6 +532,7 @@ fn gh_config_dir(identity: &str) -> Result<PathBuf, String> {
 /// Execute the act and return the structured `Act` on success.
 fn execute_act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<Act, String> {
     match act_cmd {
+        ActCommand::Commit { message } => execute_commit(message),
         ActCommand::Push { branch, message } => execute_push(branch, message.as_deref()),
         ActCommand::CreatePullRequest {
             branch,
@@ -549,6 +561,15 @@ fn execute_act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<Act, String>
             execute_comment_issue(gh_config, *number, body)
         }
     }
+}
+
+fn execute_commit(message: &str) -> Result<Act, String> {
+    run_cmd("git", &["add", "-A"], None)?;
+    run_cmd("git", &["commit", "-m", message], None)?;
+
+    let sha = run_cmd_output("git", &["rev-parse", "HEAD"], None)?;
+
+    Ok(Act::Committed { sha })
 }
 
 fn execute_push(branch: &str, message: Option<&str>) -> Result<Act, String> {
@@ -804,6 +825,9 @@ fn parse_issue_number_from_url(url: &str) -> Result<u64, String> {
 /// Format an act for human-readable display.
 fn format_act(act: &Act) -> String {
     match act {
+        Act::Committed { sha } => {
+            format!("committed ({sha})")
+        }
         Act::Pushed { branch, sha } => {
             format!("pushed to {branch} ({sha})")
         }
@@ -967,6 +991,14 @@ mod tests {
     fn parse_issue_number_from_github_url() {
         let url = "https://github.com/dyreby/helm/issues/12";
         assert_eq!(parse_issue_number_from_url(url).unwrap(), 12);
+    }
+
+    #[test]
+    fn format_committed_act() {
+        let act = Act::Committed {
+            sha: "abc1234".to_string(),
+        };
+        assert_eq!(format_act(&act), "committed (abc1234)");
     }
 
     #[test]

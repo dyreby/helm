@@ -33,6 +33,9 @@ pub struct Action {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Act {
+    /// Committed changes locally.
+    Committed { sha: String },
+
     /// Pushed commits to a branch.
     Pushed { branch: String, sha: String },
 
