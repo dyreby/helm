@@ -263,7 +263,7 @@ mod tests {
 
         storage.create_voyage(&voyage).unwrap();
         voyage.status = VoyageStatus::Completed {
-            at: Timestamp::now(),
+            completed_at: Timestamp::now(),
             summary: Some("Done.".into()),
         };
         storage.update_voyage(&voyage).unwrap();

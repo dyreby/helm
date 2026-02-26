@@ -60,8 +60,8 @@ pub enum Command {
     /// Reads observations from `--observation` files or stdin (single observation),
     /// attaches the position, and writes the bearing to the logbook.
     Record {
-        /// Voyage ID — the full UUID, or just enough leading characters
-        /// to match exactly one voyage (e.g. `a3b` if only one ID starts with that).
+        /// Voyage ID.
+        /// Full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
 
         /// Your read on the state of the world.
@@ -95,21 +95,21 @@ pub enum VoyageCommand {
     /// Displays observations and positions for each bearing, and outcomes for each action.
     /// The logbook tells the story through positions.
     Log {
-        /// Voyage ID — the full UUID, or just enough leading characters
-        /// to match exactly one voyage (e.g. `a3b` if only one ID starts with that).
+        /// Voyage ID.
+        /// Full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
     },
 
     /// Mark a voyage as completed.
     ///
     /// Updates the voyage status and records a completion entry in the logbook.
-    /// Optionally accepts a summary of what was accomplished.
+    /// Optionally accepts a summary of what was accomplished or learned.
     Complete {
-        /// Voyage ID — the full UUID, or just enough leading characters
-        /// to match exactly one voyage (e.g. `a3b` if only one ID starts with that).
+        /// Voyage ID.
+        /// Full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
 
-        /// Summary of what was accomplished.
+        /// Summary of what was accomplished or learned.
         #[arg(long)]
         summary: Option<String>,
     },
@@ -309,8 +309,8 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
     println!("Created: {}", voyage.created_at);
     match &voyage.status {
         VoyageStatus::Active => println!("Status: active"),
-        VoyageStatus::Completed { at, summary } => {
-            println!("Status: completed ({at})");
+        VoyageStatus::Completed { completed_at, summary } => {
+            println!("Status: completed ({completed_at})");
             if let Some(s) = summary {
                 println!("Summary: {s}");
             }
@@ -373,7 +373,7 @@ fn cmd_complete(storage: &Storage, voyage_ref: &str, summary: Option<&str>) -> R
     }
 
     voyage.status = VoyageStatus::Completed {
-        at: jiff::Timestamp::now(),
+        completed_at: jiff::Timestamp::now(),
         summary: summary.map(String::from),
     };
     storage
@@ -381,7 +381,7 @@ fn cmd_complete(storage: &Storage, voyage_ref: &str, summary: Option<&str>) -> R
         .map_err(|e| format!("failed to update voyage: {e}"))?;
 
     let short_id = &voyage.id.to_string()[..8];
-    eprintln!("Voyage {short_id} completed.");
+    eprintln!("Voyage {short_id} completed");
     if let Some(s) = summary {
         eprintln!("Summary: {s}");
     }
