@@ -28,13 +28,17 @@ pub enum VoyageKind {
 
 /// Where a voyage stands in its lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "state")]
 pub enum VoyageStatus {
     /// Work is in progress.
     Active,
 
-    /// Paused, can be resumed. The world may have changed.
-    Paused,
+    /// The voyage is complete — returned to port, logbook sealed.
+    Completed {
+        /// When the voyage was completed.
+        at: Timestamp,
 
-    /// Completed with an outcome.
-    Completed,
+        /// What was accomplished and what was learned.
+        summary: Option<String>,
+    },
 }

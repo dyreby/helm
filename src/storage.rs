@@ -70,8 +70,6 @@ impl Storage {
     }
 
     /// Updates a voyage's metadata on disk.
-    // TODO(#30): remove allow when voyage complete is wired to CLI.
-    #[allow(dead_code)]
     pub fn update_voyage(&self, voyage: &Voyage) -> Result<()> {
         let path = self.voyage_dir(voyage.id).join("voyage.json");
         if !path.exists() {
@@ -264,11 +262,14 @@ mod tests {
         let mut voyage = sample_voyage();
 
         storage.create_voyage(&voyage).unwrap();
-        voyage.status = VoyageStatus::Completed;
+        voyage.status = VoyageStatus::Completed {
+            at: Timestamp::now(),
+            summary: Some("Done.".into()),
+        };
         storage.update_voyage(&voyage).unwrap();
 
         let loaded = storage.load_voyage(voyage.id).unwrap();
-        assert!(matches!(loaded.status, VoyageStatus::Completed));
+        assert!(matches!(loaded.status, VoyageStatus::Completed { .. }));
     }
 
     #[test]
