@@ -6,8 +6,7 @@ Each voyage has an intent, an append-only logbook, and an outcome.
 ## Voyages
 
 A voyage starts with intent — where you're going and why.
-Along the way you take bearings to understand where you are
-and take actions to change the world.
+Along the way you take bearings to understand where you are and take actions to change the world.
 The logbook records everything that happened, in order, immutably.
 
 Voyages are short by design.
@@ -26,8 +25,7 @@ If a voyage finishes in one session, the completion summary is often the only re
 
 ## Actions
 
-An action is something that changed the world —
-push a branch, open a PR, merge, comment, close an issue.
+An action is something that changed the world — push a branch, open a PR, merge, comment, close an issue.
 Each records what happened, who did it, and when.
 The logbook captures what happened, not what was attempted.
 
@@ -43,7 +41,7 @@ Source kinds grow as Helm needs to see more of the world.
 - **Caller-agnostic.** Helm serves whoever calls it — human, agent, TUI, or script.
 - **Append-only.** The logbook is a trail, not a workspace.
 - **Local.** No syncing, no shared state.
-- **Joy matters.** Naming and language shape how a tool feels to use. I find the nautical theme helpful and fun here.
+- **Joy matters.** Naming and language shape how a tool feels to use. I find the nautical theme helpful and fun here. ⛵️
 
 ## Inspirations
 

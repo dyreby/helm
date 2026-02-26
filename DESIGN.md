@@ -22,7 +22,7 @@ Voyage IDs accept unambiguous prefixes (`a3b` instead of the full UUID).
 
 | Name | Role |
 |------|------|
-| **Voyage** | A unit of work with intent, logbook, and outcome |
+| **Voyage** | A unit of work with intent, a logbook, and an outcome |
 | **Logbook** | Append-only sequence of bearings and actions |
 | **Bearing** | Immutable record: observations + position |
 | **Observation** | Self-contained: subject + sighting + timestamp |
@@ -35,7 +35,7 @@ Voyage IDs accept unambiguous prefixes (`a3b` instead of the full UUID).
 ## Voyage Kinds
 
 - **Open Waters** — general-purpose, no prescribed framing.
-- **Resolve Issue** — framed around understanding and closing a specific issue.
+- **Resolve Issue** — framed around understanding and closing a specific GitHub issue.
 
 ## Source Kinds
 
@@ -46,7 +46,7 @@ GitHub, web, and search are planned additions.
 
 ## Actions and Identity
 
-Actions execute real commands (git, `gh`) and record the result.
+Actions execute real commands (`git`, `gh`) and record the result.
 Identity (`--as`) selects which GitHub account to use.
 Each identity has its own auth config under `~/.helm/gh-config/`.
 
@@ -82,7 +82,7 @@ $ helm observe rust-project . --out obs.json
 $ helm record a3b "Null check missing in widget init path" --observation obs.json
 
 $ helm act a3b --as john-agent push --branch fix-widget --message "Fix null check"
-$ helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget"
+$ helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget" --reviewer dyreby
 $ helm act a3b --as john-agent merge-pull-request 45
 
 $ helm voyage complete a3b --summary "Fixed null check in widget init"
