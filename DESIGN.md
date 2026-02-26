@@ -2,7 +2,7 @@
 
 The current design for Helm. Serves [VISION.md](VISION.md). The vision serves [CHARTER.md](CHARTER.md).
 
-If this design changes, that's just work.
+If this design changes, that's growth — the vision held, and we learned something.
 
 ## Terminology
 
