@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Take as many as you want; only the ones you choose to record become part of a bearing.
 /// Identified by position in the bearing's observation list, not by ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Observation {
     /// What was observed.
     pub mark: Mark,
@@ -28,7 +29,7 @@ pub struct Observation {
 /// Adding a new source kind means adding a variant here
 /// and implementing its observation logic.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Mark {
     /// Filesystem structure and content.
     ///
@@ -53,7 +54,7 @@ pub enum Mark {
 
 /// What was seen when observing a mark.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Sighting {
     /// Results from observing a filesystem mark.
     Files {
@@ -67,6 +68,7 @@ pub enum Sighting {
 
 /// A directory listing produced by listing a path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DirectoryListing {
     pub path: PathBuf,
     pub entries: Vec<DirectoryEntry>,
@@ -74,6 +76,7 @@ pub struct DirectoryListing {
 
 /// A single entry in a directory listing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DirectoryEntry {
     pub name: String,
     pub is_dir: bool,
@@ -82,6 +85,7 @@ pub struct DirectoryEntry {
 
 /// The contents of a file produced by reading a path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileContents {
     pub path: PathBuf,
     pub content: FileContent,
@@ -89,7 +93,7 @@ pub struct FileContents {
 
 /// What was found when reading a file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FileContent {
     /// UTF-8 text content.
     Text { content: String },
