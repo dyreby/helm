@@ -63,8 +63,8 @@ The sighting contains the full directory tree (survey) and documentation file co
 Source code is not read. This is deliberate — `RustProject` is for orientation.
 It answers "what is this project and how is it structured?" not "what does the code do?"
 Once you know which files matter, use `Mark::Files` with focused paths to read them.
-Orient first, then focus. Most voyages start with a `RustProject` observation
-and narrow from there.
+Orient first, then focus. This two-step pattern — broad observation to get your bearings,
+then targeted reads where it matters — is central to how Helm works.
 
 ### 3. Record a bearing
 
