@@ -223,7 +223,9 @@ mod tests {
 
         assert_eq!(inspections.len(), 1);
         assert_eq!(inspections[0].path, focus[0]);
-        assert!(matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world"));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world")
+        );
     }
 
     #[test]
@@ -233,7 +235,9 @@ mod tests {
 
         let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
-        assert!(matches!(&inspections[0].content, FileContent::Text { content: s } if s.is_empty()));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s.is_empty())
+        );
     }
 
     #[test]
@@ -293,9 +297,15 @@ mod tests {
         let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert_eq!(inspections.len(), 3);
-        assert!(matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world"));
-        assert!(matches!(&inspections[1].content, FileContent::Text { content: s } if s.is_empty()));
-        assert!(matches!(&inspections[2].content, FileContent::Text { content: s } if s == "nested"));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world")
+        );
+        assert!(
+            matches!(&inspections[1].content, FileContent::Text { content: s } if s.is_empty())
+        );
+        assert!(
+            matches!(&inspections[2].content, FileContent::Text { content: s } if s == "nested")
+        );
     }
 
     // ── Combined tests ──
@@ -315,7 +325,9 @@ mod tests {
         assert_eq!(survey[0].entries.len(), 3);
 
         assert_eq!(inspections.len(), 1);
-        assert!(matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world"));
+        assert!(
+            matches!(&inspections[0].content, FileContent::Text { content: s } if s == "hello world")
+        );
     }
 
     #[test]
