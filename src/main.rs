@@ -1,3 +1,4 @@
+mod act;
 mod bearing;
 mod cli;
 mod model;

@@ -3,9 +3,6 @@
 //! These types represent the conceptual architecture:
 //! voyages, bearings, observations, sightings, positions, and actions.
 
-// TODO(#8): remove allow when action types are wired to CLI.
-#![allow(unused_imports)]
-
 mod action;
 mod bearing;
 mod position;
@@ -14,8 +11,10 @@ mod voyage;
 
 use serde::{Deserialize, Serialize};
 
-pub use action::{ActionOutcome, ActionPlan, ActionReport, FileEdit, FileWrite};
+pub use action::{Act, Action, IssueAct, PullRequestAct};
 pub use bearing::Bearing;
+// TODO: remove allow once TUI or CLI consumes position history.
+#[allow(unused_imports)]
 pub use position::{Position, PositionAttempt, PositionSource};
 pub use source::{
     DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation, Sighting, Subject,
@@ -32,5 +31,5 @@ pub enum LogbookEntry {
     Bearing(Bearing),
 
     /// An action was performed.
-    ActionReport(ActionReport),
+    Action(Action),
 }

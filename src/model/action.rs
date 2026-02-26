@@ -1,60 +1,92 @@
-//! Action types: intent to affect the world and the resulting outcome.
-
-use std::path::PathBuf;
+//! Action types: records of things done during a voyage.
+//!
+//! An action is a single, immutable record of something that changed the world.
+//! The logbook records what happened — not what was planned, attempted, or failed.
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-/// Intent to affect the world.
+/// A single thing done during a voyage.
 ///
-/// Describes what should happen, not how.
-/// Reviewed and approved before execution through Helm's gate
-/// (editor for text, yes/no for irreversible operations).
+/// Each action is one discrete act — push, create a PR, comment on an issue.
+/// The logbook records one action per entry.
+/// Details beyond what's captured here live on the platform (GitHub, git)
+/// and can be observed through bearings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Action {
+    /// Unique identifier.
+    pub id: Uuid,
+
+    /// Who performed this action (e.g. `john-agent`, `dyreby`).
+    pub identity: String,
+
+    /// What was done.
+    pub act: Act,
+
+    /// When the action was performed.
+    pub performed_at: Timestamp,
+}
+
+/// What was done.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum ActionPlan {
-    /// Create a new file or overwrite an existing one entirely.
-    WriteFiles { files: Vec<FileWrite> },
+pub enum Act {
+    /// Pushed commits to a remote branch.
+    Pushed {
+        /// The branch that was pushed.
+        branch: String,
 
-    /// Make surgical edits to existing files.
-    /// Finds exact text and replaces it, leaving the rest of the file untouched.
-    EditFiles { edits: Vec<FileEdit> },
+        /// The commit SHA after pushing.
+        sha: String,
+    },
+
+    /// Did something to a pull request.
+    PullRequest {
+        /// The pull request number.
+        number: u64,
+
+        /// What was done to it.
+        act: PullRequestAct,
+    },
+
+    /// Did something to an issue.
+    Issue {
+        /// The issue number.
+        number: u64,
+
+        /// What was done to it.
+        act: IssueAct,
+    },
 }
 
-/// A file to be created or overwritten.
+/// An act performed on a pull request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileWrite {
-    pub path: PathBuf,
-    pub content: String,
+#[serde(tag = "kind")]
+pub enum PullRequestAct {
+    /// Created the pull request.
+    Created,
+
+    /// Merged the pull request.
+    Merged,
+
+    /// Left a comment on the pull request.
+    Commented,
+
+    /// Replied to a review comment thread.
+    Replied,
 }
 
-/// A surgical edit to an existing file: find exact text, replace it.
+/// An act performed on an issue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileEdit {
-    pub path: PathBuf,
-    pub old_text: String,
-    pub new_text: String,
-}
+#[serde(tag = "kind")]
+pub enum IssueAct {
+    /// Created the issue.
+    Created,
 
-/// The outcome of executing an action.
-///
-/// Always contains the plan that produced it. No orphaned intents.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActionReport {
-    pub plan: ActionPlan,
-    pub outcome: ActionOutcome,
-    pub completed_at: Timestamp,
-}
+    /// Closed the issue.
+    Closed,
 
-/// What happened when an action was executed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ActionOutcome {
-    /// Action completed successfully.
-    Success,
-
-    /// Action failed with an error message.
-    Failed(String),
-
-    /// Action was rejected at the approval gate.
-    Rejected,
+    /// Left a comment on the issue.
+    Commented,
 }

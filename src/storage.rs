@@ -212,16 +212,15 @@ mod tests {
         }
     }
 
-    fn sample_action_report() -> ActionReport {
-        ActionReport {
-            plan: ActionPlan::WriteFiles {
-                files: vec![FileWrite {
-                    path: PathBuf::from("README.md"),
-                    content: "# Hello".into(),
-                }],
+    fn sample_action() -> Action {
+        Action {
+            id: Uuid::new_v4(),
+            identity: "john-agent".into(),
+            act: Act::Pushed {
+                branch: "main".into(),
+                sha: "abc1234".into(),
             },
-            outcome: ActionOutcome::Success,
-            completed_at: Timestamp::now(),
+            performed_at: Timestamp::now(),
         }
     }
 
@@ -318,19 +317,19 @@ mod tests {
         storage.create_voyage(&voyage).unwrap();
 
         let bearing = sample_bearing();
-        let report = sample_action_report();
+        let action = sample_action();
 
         storage
             .append_entry(voyage.id, &LogbookEntry::Bearing(bearing.clone()))
             .unwrap();
         storage
-            .append_entry(voyage.id, &LogbookEntry::ActionReport(report.clone()))
+            .append_entry(voyage.id, &LogbookEntry::Action(action.clone()))
             .unwrap();
 
         let entries = storage.load_logbook(voyage.id).unwrap();
         assert_eq!(entries.len(), 2);
         assert!(matches!(entries[0], LogbookEntry::Bearing(_)));
-        assert!(matches!(entries[1], LogbookEntry::ActionReport(_)));
+        assert!(matches!(entries[1], LogbookEntry::Action(_)));
     }
 
     #[test]

@@ -20,8 +20,12 @@ use clap::{Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::{
+    act,
     bearing,
-    model::{LogbookEntry, Observation, Subject, Voyage, VoyageKind, VoyageStatus},
+    model::{
+        Act, Action, IssueAct, LogbookEntry, Observation, PullRequestAct, Subject, Voyage,
+        VoyageKind, VoyageStatus,
+    },
     storage::Storage,
 };
 
@@ -36,8 +40,11 @@ pub struct Cli {
 const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
   1. helm voyage new "Resolve #42: fix widget crash" --kind resolve-issue
      → prints a voyage ID (e.g. a3b0fc12)
-  2. Do the work — fix the bug, open the PR, get it merged.
-  3. helm voyage complete a3b --summary "Fixed null check in widget init"
+  2. Do the work — fix the bug, write the code.
+  3. helm act a3b --as john-agent push --branch fix-widget
+  4. helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget crash"
+  5. helm act a3b --as john-agent merge-pull-request 45
+  6. helm voyage complete a3b --summary "Fixed null check in widget init"
 
 Stopping mid-voyage? Record a bearing so the next session has context:
   helm observe rust-project . --out obs.json
@@ -67,6 +74,24 @@ pub enum Command {
         /// Write the observation JSON to this file instead of stdout.
         #[arg(long, global = true)]
         out: Option<PathBuf>,
+    },
+
+    /// Perform an action: affect the world and record it to the logbook.
+    ///
+    /// Helm executes the operation (git push, gh pr create, etc.)
+    /// and records the action on success.
+    /// Failed operations are not recorded — the logbook only contains what happened.
+    Act {
+        /// Voyage ID: full UUID or unambiguous prefix.
+        voyage: String,
+
+        /// GitHub identity to use for gh commands (e.g. `john-agent`, `dyreby`).
+        /// Determines which gh auth config is used.
+        #[arg(long = "as")]
+        identity: String,
+
+        #[command(subcommand)]
+        action: ActCommand,
     },
 
     /// Record a bearing: attach a position to one or more observations.
@@ -153,6 +178,104 @@ impl VoyageKindArg {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum ActCommand {
+    /// Push commits to a remote branch.
+    Push {
+        /// Branch to push.
+        #[arg(long)]
+        branch: String,
+    },
+
+    /// Create a pull request.
+    CreatePullRequest {
+        /// Branch to create the PR from.
+        #[arg(long)]
+        branch: String,
+
+        /// PR title.
+        #[arg(long)]
+        title: String,
+
+        /// PR body.
+        #[arg(long)]
+        body: Option<String>,
+
+        /// Base branch to merge into.
+        #[arg(long)]
+        base: Option<String>,
+
+        /// Request review from this user.
+        #[arg(long)]
+        reviewer: Option<String>,
+    },
+
+    /// Merge a pull request (squash merge).
+    MergePullRequest {
+        /// PR number.
+        number: u64,
+    },
+
+    /// Comment on a pull request.
+    CommentOnPullRequest {
+        /// PR number.
+        number: u64,
+
+        /// Comment body.
+        #[arg(long)]
+        body: String,
+    },
+
+    /// Reply to a review comment on a pull request.
+    ReplyToReviewComment {
+        /// PR number.
+        number: u64,
+
+        /// The review comment ID to reply to.
+        #[arg(long)]
+        comment_id: u64,
+
+        /// Reply body.
+        #[arg(long)]
+        body: String,
+    },
+
+    /// Create an issue.
+    CreateIssue {
+        /// Issue title.
+        #[arg(long)]
+        title: String,
+
+        /// Issue body.
+        #[arg(long)]
+        body: Option<String>,
+
+        /// Labels to add.
+        #[arg(long)]
+        label: Vec<String>,
+    },
+
+    /// Close an issue.
+    CloseIssue {
+        /// Issue number.
+        number: u64,
+
+        /// Reason for closing.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
+    /// Comment on an issue.
+    CommentOnIssue {
+        /// Issue number.
+        number: u64,
+
+        /// Comment body.
+        #[arg(long)]
+        body: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum ObserveSource {
     /// Observe a Rust project: full directory tree and documentation.
     RustProject {
@@ -185,6 +308,11 @@ pub fn run(storage: &Storage) -> Result<(), String> {
                 cmd_complete(storage, &voyage, summary.as_deref())
             }
         },
+        Command::Act {
+            voyage,
+            identity,
+            action,
+        } => cmd_act(storage, &voyage, &identity, &action),
         Command::Observe { ref source, out } => cmd_observe(source, out),
         Command::Record {
             voyage,
@@ -372,9 +500,10 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
                 println!("  Position: {}", b.position.text);
                 println!();
             }
-            LogbookEntry::ActionReport(r) => {
-                println!("── Action {} ── {}", i + 1, r.completed_at);
-                println!("  Outcome: {:?}", r.outcome);
+            LogbookEntry::Action(a) => {
+                let short_id = &a.id.to_string()[..8];
+                println!("── Action {} ({short_id}) ── {}", i + 1, a.performed_at);
+                println!("  {} (as {})", format_act(&a.act), a.identity);
                 println!();
             }
         }
@@ -408,6 +537,60 @@ fn cmd_complete(storage: &Storage, voyage_ref: &str, summary: Option<&str>) -> R
     }
 
     Ok(())
+}
+
+fn cmd_act(
+    storage: &Storage,
+    voyage_ref: &str,
+    identity: &str,
+    command: &ActCommand,
+) -> Result<(), String> {
+    let voyage = resolve_voyage(storage, voyage_ref)?;
+
+    if matches!(voyage.status, VoyageStatus::Completed { .. }) {
+        return Err(format!(
+            "voyage {} is already completed",
+            &voyage.id.to_string()[..8]
+        ));
+    }
+
+    let act = act::execute(identity, command)?;
+
+    let action = Action {
+        id: Uuid::new_v4(),
+        identity: identity.to_string(),
+        act: act.clone(),
+        performed_at: jiff::Timestamp::now(),
+    };
+
+    storage
+        .append_entry(voyage.id, &LogbookEntry::Action(action))
+        .map_err(|e| format!("failed to record action: {e}"))?;
+
+    let short_voyage = &voyage.id.to_string()[..8];
+    eprintln!("Action recorded for voyage {short_voyage}: {}", format_act(&act));
+
+    Ok(())
+}
+
+/// Format an act for human-readable display.
+fn format_act(act: &Act) -> String {
+    match act {
+        Act::Pushed { branch, sha } => {
+            format!("Pushed to {branch} ({sha})")
+        }
+        Act::PullRequest { number, act } => match act {
+            PullRequestAct::Created => format!("Created pull request #{number}"),
+            PullRequestAct::Merged => format!("Merged pull request #{number}"),
+            PullRequestAct::Commented => format!("Commented on pull request #{number}"),
+            PullRequestAct::Replied => format!("Replied to review comment on pull request #{number}"),
+        },
+        Act::Issue { number, act } => match act {
+            IssueAct::Created => format!("Created issue #{number}"),
+            IssueAct::Closed => format!("Closed issue #{number}"),
+            IssueAct::Commented => format!("Commented on issue #{number}"),
+        },
+    }
 }
 
 /// Resolve a voyage reference (full UUID or unambiguous prefix) to a voyage.
