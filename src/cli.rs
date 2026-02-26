@@ -37,18 +37,12 @@ const WORKFLOW_HELP: &str = "\
 Workflow: resolving an issue
   1. helm voyage new \"Resolve #42: fix widget crash\" --kind resolve-issue
      → prints a voyage ID (e.g. a3b0fc12)
-  2. helm observe rust-project . --out obs.json
-     → observe the codebase, save for the bearing
-  3. Do the work — fix the bug, open the PR, get it merged.
-  4. helm voyage complete a3b --summary \"Fixed null check in widget init\"
+  2. Do the work — fix the bug, open the PR, get it merged.
+  3. helm voyage complete a3b --summary \"Fixed null check in widget init\"
 
-When to record a bearing (step between 2 and 3):
-  helm record a3b \"CI is green, PR is up, waiting on review\" --observation obs.json
-
-  Bearings exist for continuity. Record one when you'd need context
-  if you had to stop and come back in a new session. If you're
-  finishing in this session, skip it — the completion summary captures
-  the outcome.
+Stopping mid-voyage? Record a bearing so the next session has context:
+  helm observe rust-project . --out obs.json
+  helm record a3b \"Halfway through, refactoring widget module\" --observation obs.json
 
 Check on voyages:
   helm voyage list           → see active voyages
