@@ -284,6 +284,23 @@ enum FileContent {
 ```
 
 `RustProject` reuses `Sighting::Files` — same structure, different mark that produced it.
+A `RustProject` observation returns both:
+
+```
+Sighting::Files {
+    directories: [
+        DirectoryListing { path: ".",    entries: [src/, Cargo.toml, README.md, ...] },
+        DirectoryListing { path: "./src", entries: [main.rs, model.rs, ...] },
+    ],
+    files: [
+        FileContents { path: "README.md",       content: Text { "# Helm\n..." } },
+        FileContents { path: "CONTRIBUTING.md",  content: Text { "..." } },
+    ],
+}
+```
+
+`directories` has the full tree — every file appears here so you know it exists and how big it is.
+`files` has only documentation contents. Source files like `main.rs` show up in the listing but aren't read.
 
 ### Bearing
 
