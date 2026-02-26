@@ -12,11 +12,18 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 |------|---------------|-----------|
 | **Voyage** | A unit of work with intent, logbook, and outcome | `Voyage` |
 | **Logbook** | Append-only record of a voyage's bearings and actions | `Vec<LogbookEntry>` |
-| **Bearing** | Immutable snapshot: observations sealed with a reading | `Bearing` |
-| **Observation** | What you looked at and what you saw, timestamped | `Observation` |
+| **Bearing** | What was looked at and what it meant — marks + reading | `Bearing` |
+| **Observation** | What was looked at and what was seen — mark + sighting | `Observation` |
 | **Mark** | What you pointed the spyglass at — a domain of observable reality | `Mark` |
 | **Sighting** | The raw data returned when observing a mark | `Sighting` |
 | **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
+
+A bearing and an observation both start from a mark, but they capture different things.
+The bearing records marks + reading: what you looked at and what you made of it. Lightweight, always in the logbook.
+The observation records mark + sighting: what you looked at and the raw data you saw. Heavy, stored separately, prunable.
+
+Deleting an observation doesn't break the logbook's story — you still know what was looked at and what was concluded.
+The sighting is evidence; the reading is interpretation. Both reference the same marks, but they're decoupled records.
 | **Action** | Something that changed the world, recorded after the fact | `Action` |
 | **Act** | The specific thing that was done (push, create PR, comment) | `Act` |
 | **Scope** | What to survey — the broad view (directories, PRs) | Mark fields |
@@ -77,13 +84,14 @@ Reading: Widget module has a null check missing in init()...
 Appends a `LogbookEntry::Bearing` to `logbook.jsonl`:
 ```
 {
-  observations: [{ mark: RustProject { root: "." }, sighting: ..., observed_at: ... }],
+  marks: [RustProject { root: "." }],
   reading: { text: "Widget module has a null check...", history: [] },
   taken_at: "2026-02-26T17:01:00Z"
 }
 ```
 
-The bearing is the durable record. The sighting is heavy; the mark and reading are light.
+The observation (mark + sighting) is stored separately as a prunable artifact.
+The bearing (marks + reading) stays in the logbook — lightweight, always available.
 Scanning the logbook later, the bearing reads: *"Looked at the Rust project. Widget module has a null check missing."*
 
 ### 4. Do the work, then act
@@ -154,14 +162,19 @@ Voyage {
 
 ```rust
 Bearing {
-    observations: Vec<Observation>,
+    marks: Vec<Mark>,
     reading: Reading,
     taken_at: Timestamp,
 }
 ```
 
-Seals observations with a reading.
+Records what was looked at (marks) and what it meant (reading).
+The bearing is the logbook's narrative unit — lightweight and self-contained.
 Bearings have no ID — identified by position in the logbook stream.
+
+> **Note:** The current implementation stores `observations: Vec<Observation>` in bearings,
+> inlining the full sightings. The intended design separates them — bearings reference marks,
+> observations are stored as separate prunable artifacts. See #49.
 
 ### Observation
 
@@ -173,7 +186,10 @@ Observation {
 }
 ```
 
-Self-contained. Take as many as you want; only the ones you choose to record become part of a bearing.
+The raw capture: what you pointed the spyglass at and what came back.
+Take as many as you want. Most are glances — quick looks that get discarded.
+The ones worth keeping are stored as artifacts alongside the bearing, but separate from it.
+Pruning observations doesn't break the logbook — the bearing still has the marks and the reading.
 
 ### Mark
 
