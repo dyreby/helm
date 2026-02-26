@@ -4,6 +4,8 @@ The current design for Helm. Serves [VISION.md](VISION.md). The vision serves [C
 
 If this design changes, that's growth — the vision held, and we learned something.
 
+This document is where design decisions are proposed, discussed, and recorded.
+
 ## Terminology
 
 The nautical metaphor is load-bearing. These terms are used consistently across code, CLI, and docs.
@@ -17,19 +19,25 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Mark** | What you pointed the spyglass at — a domain of observable reality | `Mark` |
 | **Sighting** | The raw data returned when observing a mark | `Sighting` |
 | **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
-
-A bearing and an observation both start from a mark, but they capture different things.
-The bearing records marks + reading: what you looked at and what you made of it. Lightweight, always in the logbook.
-The observation records mark + sighting: what you looked at and the raw data you saw. Heavy, stored separately, prunable.
-
-Deleting an observation doesn't break the logbook's story — you still know what was looked at and what was concluded.
-The sighting is evidence; the reading is interpretation. Both reference the same marks, but they're decoupled records.
 | **Action** | Something that changed the world, recorded after the fact | `Action` |
 | **Act** | The specific thing that was done (push, create PR, comment) | `Act` |
 | **Scope** | What to survey — the broad view (directories, PRs) | Mark fields |
 | **Focus** | What to inspect — the deep view (specific files, diffs) | Mark fields |
 
 Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
+
+### Bearing vs. Observation
+
+A bearing and an observation both start from a mark, but they capture different things.
+
+- **Bearing** = marks + reading. What you looked at and what you made of it. Lightweight, always in the logbook.
+- **Observation** = mark + sighting. What you looked at and the raw data you saw. Heavy, stored separately, prunable.
+
+A bearing can reference multiple marks — you looked at several things and formed one reading.
+An observation is always a single look — one mark and what came back.
+
+Deleting an observation doesn't break the logbook's story — you still know what was looked at and what was concluded.
+The sighting is evidence; the reading is interpretation. Both reference the same marks, but they're decoupled records.
 
 ## Example Flow: Resolving an Issue
 
@@ -144,161 +152,321 @@ Marks, readings, actions. The voyage's story, without replaying raw sightings.
 
 ## Types
 
-### Voyage
+### Mark
+
+The central enum. Each variant is a domain of observable reality.
+Adding a new source kind means adding a variant here and implementing its observation logic.
+
+The mark carries enough structure that scanning the logbook tells a story —
+you know *what* was looked at without replaying the sighting.
 
 ```rust
-Voyage {
-    id: Uuid,
-    kind: VoyageKind,       // OpenWaters | ResolveIssue
-    intent: String,
-    created_at: Timestamp,
-    status: VoyageStatus,   // Active | Completed { completed_at, summary }
+/// What you pointed the spyglass at.
+///
+/// Each variant describes a domain with enough detail to reconstruct
+/// what was observed at a glance. The mark is the logbook's label;
+/// the sighting is the raw data behind it.
+enum Mark {
+    /// Filesystem structure and content.
+    ///
+    /// Scope: directories to survey (list contents with metadata).
+    /// Focus: specific files to inspect (read full contents).
+    Files {
+        scope: Vec<PathBuf>,
+        focus: Vec<PathBuf>,
+    },
+
+    /// A Rust project rooted at a directory.
+    ///
+    /// Surveys the full tree (respects .gitignore, skips target/).
+    /// Inspects documentation files only — README, VISION, CONTRIBUTING,
+    /// agent instructions, etc. Source code is not read.
+    ///
+    /// This is an orientation mark. Use `Files` with focused paths
+    /// to read specific source files on subsequent bearings.
+    RustProject {
+        root: PathBuf,
+    },
+
+    // ── Planned ──
+
+    /// GitHub: PRs, issues, checks, comments.
+    ///
+    /// Enough structure to distinguish "looked at PR #42 metadata"
+    /// from "read the inline review comments on PR #42."
+    ///
+    /// Sketch — actual types to be worked through when building this mark.
+    // GitHub {
+    //     target: GitHubTarget,       // PullRequest(u64) | Issue(u64) | Repository
+    //     focus: Vec<GitHubFocus>,    // Diff | InlineComments | Checks | Comments | Approvals
+    // },
+
+    /// Human-provided context with no system-observable source.
+    ///
+    /// Offline conversations, decisions made outside the tool, background knowledge.
+    /// No sighting to fetch — just a mark that describes what the context is about,
+    /// and a reading the human attaches.
+    ///
+    /// Structure TBD. Minimum viable: a description string.
+    // Context {
+    //     description: String,
+    // },
 }
 ```
 
-`VoyageKind` frames the first bearing but doesn't constrain the voyage after that.
+`Files` separates scope (survey) from focus (inspect) as flat vectors.
+`RustProject` is a composite that does both — surveys the tree, inspects docs.
+
+### Sighting
+
+Mirrors `Mark`. One variant per domain, containing the raw data from observation.
+
+```rust
+/// What was seen when observing a mark.
+///
+/// Each variant corresponds to a Mark variant.
+/// The sighting is the heavy payload — full file contents,
+/// directory trees, API responses. Stored separately from
+/// the bearing and prunable.
+enum Sighting {
+    /// Results from observing a Files or RustProject mark.
+    Files {
+        /// Directory listings from surveyed paths.
+        survey: Vec<DirectorySurvey>,
+
+        /// File contents from focused/inspected paths.
+        inspections: Vec<FileInspection>,
+    },
+
+    // ── Planned ──
+
+    // GitHub { ... },
+}
+
+/// A directory listing produced by surveying a path.
+struct DirectorySurvey {
+    path: PathBuf,
+    entries: Vec<DirectoryEntry>,
+}
+
+/// A single entry in a directory listing.
+struct DirectoryEntry {
+    name: String,
+    is_dir: bool,
+    size_bytes: Option<u64>,
+}
+
+/// The contents of a file produced by inspecting a path.
+struct FileInspection {
+    path: PathBuf,
+    content: FileContent,
+}
+
+/// What was found when reading a file.
+enum FileContent {
+    /// UTF-8 text content.
+    Text { content: String },
+
+    /// File was not valid UTF-8. Size recorded for reference.
+    Binary { size_bytes: u64 },
+
+    /// File could not be read.
+    Error { message: String },
+}
+```
+
+`RustProject` reuses `Sighting::Files` — same structure, different mark that produced it.
 
 ### Bearing
 
 ```rust
-Bearing {
+/// An immutable record: what was observed, and what it means.
+///
+/// A bearing can reference multiple marks — you looked at several things
+/// and formed one reading. The bearing is the logbook's narrative unit.
+///
+/// Identified by position in the logbook stream, not by ID.
+struct Bearing {
     marks: Vec<Mark>,
     reading: Reading,
     taken_at: Timestamp,
 }
 ```
 
-Records what was looked at (marks) and what it meant (reading).
-A bearing can reference multiple marks — you looked at several things and formed one reading.
-The bearing is the logbook's narrative unit — lightweight and self-contained.
-Bearings have no ID — identified by position in the logbook stream.
-
-> **Note:** The current implementation stores `observations: Vec<Observation>` in bearings,
-> inlining the full sightings. The intended design separates them — bearings reference marks,
-> observations are stored as separate prunable artifacts. See #49.
+> **Note:** The current implementation stores `observations: Vec<Observation>`,
+> inlining full sightings. The intended design separates them — bearings reference
+> marks, observations are stored as separate prunable artifacts. See #49.
 
 ### Observation
 
 ```rust
-Observation {
+/// A self-contained observation: one mark, one sighting, timestamped.
+///
+/// The raw capture. Take as many as you want; most are glances
+/// that get discarded. The ones worth keeping are stored as artifacts
+/// alongside the bearing, but separate from it.
+///
+/// Pruning observations doesn't break the logbook — the bearing
+/// still has the marks and the reading.
+struct Observation {
     mark: Mark,
     sighting: Sighting,
     observed_at: Timestamp,
 }
 ```
 
-The raw capture: one mark, one sighting.
-An observation is always a single look — one mark and what came back.
-Take as many as you want. Most are glances — quick looks that get discarded.
-The ones worth keeping are stored as artifacts alongside the bearing, but separate from it.
-Pruning observations doesn't break the logbook — the bearing still has the marks and the reading.
-
-### Mark
-
-Each variant describes a domain of observable reality.
-Adding a new source kind means adding a `Mark` variant and implementing its observation logic.
-
-```rust
-Mark::Files {
-    scope: Vec<PathBuf>,    // directories to survey
-    focus: Vec<PathBuf>,    // files to inspect
-}
-
-Mark::RustProject {
-    root: PathBuf,
-}
-```
-
-`Files` separates scope (survey) from focus (inspect) as flat vectors.
-`RustProject` is a composite — surveys the full tree and inspects documentation files (README, VISION, CONTRIBUTING, agent instructions, etc.). Source code is left for targeted `Mark::Files` queries.
-
-#### Planned: GitHub
-
-```rust
-Mark::GitHub {
-    target: GitHubTarget,       // PullRequest(u64) | Issue(u64) | Repository
-    focus: Vec<GitHubFocus>,    // Diff | InlineComments | Checks | Comments | Approvals
-}
-```
-
-Enough structure to distinguish "looked at PR #42 metadata" from "read the inline review comments on PR #42."
-This is a sketch — the actual types will be worked through when building the GitHub mark.
-
-#### Planned: Context
-
-Human-provided information with no system-observable source.
-Offline conversations, decisions made outside the tool, background knowledge.
-No sighting to fetch — just a mark that describes what the context is about, and a reading the human attaches.
-
-### Sighting
-
-One variant per mark domain. The raw data returned by observation.
-
-```rust
-Sighting::Files {
-    survey: Vec<DirectorySurvey>,       // directory listings
-    inspections: Vec<FileInspection>,   // file contents
-}
-```
-
-Supporting types:
-- `DirectorySurvey` — path + list of `DirectoryEntry` (name, is_dir, size)
-- `FileInspection` — path + `FileContent` (Text, Binary, or Error)
-
-`RustProject` reuses `Sighting::Files`.
-
 ### Reading
 
 ```rust
-Reading {
-    text: String,                       // the accepted interpretation
-    history: Vec<ReadingAttempt>,       // prior attempts that were challenged
+/// A short, plain-text interpretation of the world's state.
+///
+/// The reading is the logbook's narrative voice — what you concluded
+/// from what you observed. Tracks the accepted text and the history
+/// of attempts that were challenged along the way.
+///
+/// The challenge history captures alignment gaps, not failures.
+struct Reading {
+    /// The accepted reading text.
+    text: String,
+
+    /// Prior attempts that were challenged before arriving at the accepted text.
+    history: Vec<ReadingAttempt>,
 }
 
-ReadingAttempt {
+/// A single attempt at stating a reading, possibly challenged.
+struct ReadingAttempt {
+    /// The reading text that was proposed.
     text: String,
-    source: ReadingSource,              // Agent | User
-    challenged_with: Option<String>,    // feedback that caused rejection
+
+    /// Who produced this text.
+    source: ReadingSource,
+
+    /// Feedback that caused this attempt to be rejected.
+    /// Present on challenged attempts, absent on the final accepted one.
+    challenged_with: Option<String>,
+}
+
+/// Who authored a reading.
+enum ReadingSource {
+    /// Generated by the LLM.
+    Agent,
+
+    /// Written or edited by the user.
+    User,
 }
 ```
-
-The challenge history captures alignment gaps in the collaboration, not failures.
 
 ### Action
 
 ```rust
-Action {
+/// A single, immutable record of something that changed the world.
+///
+/// Only successful operations are recorded — the logbook captures
+/// what happened, not what was attempted.
+struct Action {
     id: Uuid,
-    identity: String,       // who acted (e.g. "dyreby", "john-agent")
+
+    /// Which identity performed this action (e.g. "dyreby", "john-agent").
+    identity: String,
+
+    /// What was done.
     act: Act,
+
     performed_at: Timestamp,
+}
+
+/// What was done. Grouped by target, not by verb.
+///
+/// This grouping is deliberate: "what happened to PR #42" is a more
+/// natural question than "what was commented on." The target is the
+/// primary key; the verb is secondary.
+enum Act {
+    /// Pushed commits to a branch.
+    Pushed { branch: String, sha: String },
+
+    /// An action on a pull request.
+    PullRequest { number: u64, act: PullRequestAct },
+
+    /// An action on an issue.
+    Issue { number: u64, act: IssueAct },
+}
+
+/// Things you can do to a pull request.
+enum PullRequestAct {
+    Created,
+    Merged,
+    Commented,
+
+    /// Replied to an inline review comment.
+    /// Distinct from Commented because "I addressed feedback"
+    /// is a meaningful signal when reading the logbook.
+    Replied,
+
+    RequestedReview { reviewers: Vec<String> },
+}
+
+/// Things you can do to an issue.
+enum IssueAct {
+    Created,
+    Closed,
+    Commented,
 }
 ```
 
-Only successful operations are recorded.
-The logbook captures what happened, not what was attempted.
-
-Act types are grouped by target, not by verb:
-
-```rust
-Act::Pushed { branch, sha }
-Act::PullRequest { number, act: PullRequestAct }
-Act::Issue { number, act: IssueAct }
-```
-
-`PullRequestAct`: Created, Merged, Commented, Replied, RequestedReview.
-`IssueAct`: Created, Closed, Commented.
-
-`Replied` is distinct from `Commented` — "I addressed inline feedback" is a meaningful signal when reading the logbook.
+Identity selects which GitHub account to use.
+Each identity has its own `gh` config directory under `~/.helm/gh-config/<identity>/`.
 
 ### Logbook
 
 ```rust
-LogbookEntry::Bearing(Bearing)
-LogbookEntry::Action(Action)
+/// A single entry in the logbook, serialized as one line of JSONL.
+///
+/// Tagged enum so each line is self-describing when read back.
+/// The logbook is append-only — nothing is overwritten or dropped.
+enum LogbookEntry {
+    /// A bearing was taken.
+    Bearing(Bearing),
+
+    /// An action was performed.
+    Action(Action),
+}
 ```
 
-Append-only JSONL. Tagged enum so each line is self-describing.
+One file per voyage at `~/.helm/voyages/<uuid>/logbook.jsonl`.
+
+### Voyage
+
+```rust
+/// A unit of work with intent, logbook, and outcome.
+struct Voyage {
+    id: Uuid,
+    kind: VoyageKind,
+    intent: String,
+    created_at: Timestamp,
+    status: VoyageStatus,
+}
+
+/// The kind of voyage, which frames the first bearing.
+enum VoyageKind {
+    /// Unscoped, general-purpose voyage.
+    OpenWaters,
+
+    /// Resolve a GitHub issue.
+    ResolveIssue,
+}
+
+/// Where a voyage stands in its lifecycle.
+enum VoyageStatus {
+    Active,
+
+    Completed {
+        completed_at: Timestamp,
+        summary: Option<String>,
+    },
+}
+```
+
+`VoyageKind` frames the first bearing but doesn't constrain the voyage after that.
 
 ## Source Kinds
 
