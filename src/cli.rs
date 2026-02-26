@@ -33,20 +33,19 @@ pub struct Cli {
     pub command: Command,
 }
 
-const WORKFLOW_HELP: &str = "\
-Workflow: resolving an issue
-  1. helm voyage new \"Resolve #42: fix widget crash\" --kind resolve-issue
+const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
+  1. helm voyage new "Resolve #42: fix widget crash" --kind resolve-issue
      → prints a voyage ID (e.g. a3b0fc12)
   2. Do the work — fix the bug, open the PR, get it merged.
-  3. helm voyage complete a3b --summary \"Fixed null check in widget init\"
+  3. helm voyage complete a3b --summary "Fixed null check in widget init"
 
 Stopping mid-voyage? Record a bearing so the next session has context:
   helm observe rust-project . --out obs.json
-  helm record a3b \"Halfway through, refactoring widget module\" --observation obs.json
+  helm record a3b "Halfway through, refactoring widget module" --observation obs.json
 
 Check on voyages:
   helm voyage list           → see active voyages
-  helm voyage log a3b        → see the trail of bearings and actions";
+  helm voyage log a3b        → see the trail of bearings and actions"#;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -75,7 +74,7 @@ pub enum Command {
     /// Reads observations from `--observation` files or stdin (single observation),
     /// attaches the position, and writes the bearing to the logbook.
     ///
-    /// Bearings exist for continuity, not documentation.
+    /// Bearings exist for continuity, not just documentation.
     /// Record one when you'd need context if you had to stop and come back
     /// in a new session. If you're finishing in this session, skip the bearing
     /// and use `helm voyage complete --summary` instead.
