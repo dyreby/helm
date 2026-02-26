@@ -20,11 +20,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::{
-    act,
-    bearing,
+    act, bearing,
     model::{
-        Act, Action, IssueAct, LogbookEntry, Observation, PullRequestAct, Subject, Voyage,
-        VoyageKind, VoyageStatus,
+        Action, ActionRecord, LogbookEntry, Observation, Subject, Voyage, VoyageKind, VoyageStatus,
     },
     storage::Storage,
 };
@@ -503,7 +501,7 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
             LogbookEntry::Action(a) => {
                 let short_id = &a.id.to_string()[..8];
                 println!("── Action {} ({short_id}) ── {}", i + 1, a.performed_at);
-                println!("  {} (as {})", format_act(&a.act), a.identity);
+                println!("  {} (as {})", format_action(&a.action), a.identity);
                 println!();
             }
         }
@@ -554,42 +552,43 @@ fn cmd_act(
         ));
     }
 
-    let act = act::execute(identity, command)?;
+    let action = act::execute(identity, command)?;
 
-    let action = Action {
+    let record = ActionRecord {
         id: Uuid::new_v4(),
         identity: identity.to_string(),
-        act: act.clone(),
+        action: action.clone(),
         performed_at: jiff::Timestamp::now(),
     };
 
     storage
-        .append_entry(voyage.id, &LogbookEntry::Action(action))
+        .append_entry(voyage.id, &LogbookEntry::Action(record))
         .map_err(|e| format!("failed to record action: {e}"))?;
 
     let short_voyage = &voyage.id.to_string()[..8];
-    eprintln!("Action recorded for voyage {short_voyage}: {}", format_act(&act));
+    eprintln!(
+        "Action recorded for voyage {short_voyage}: {}",
+        format_action(&action)
+    );
 
     Ok(())
 }
 
-/// Format an act for human-readable display.
-fn format_act(act: &Act) -> String {
-    match act {
-        Act::Pushed { branch, sha } => {
-            format!("Pushed to {branch} ({sha})")
+/// Format an action for human-readable display.
+fn format_action(action: &Action) -> String {
+    match action {
+        Action::Pushed { branch, sha } => format!("Pushed to {branch} ({sha})"),
+        Action::CreatedPullRequest { number } => format!("Created pull request #{number}"),
+        Action::MergedPullRequest { number } => format!("Merged pull request #{number}"),
+        Action::CommentedOnPullRequest { number } => {
+            format!("Commented on pull request #{number}")
         }
-        Act::PullRequest { number, act } => match act {
-            PullRequestAct::Created => format!("Created pull request #{number}"),
-            PullRequestAct::Merged => format!("Merged pull request #{number}"),
-            PullRequestAct::Commented => format!("Commented on pull request #{number}"),
-            PullRequestAct::Replied => format!("Replied to review comment on pull request #{number}"),
-        },
-        Act::Issue { number, act } => match act {
-            IssueAct::Created => format!("Created issue #{number}"),
-            IssueAct::Closed => format!("Closed issue #{number}"),
-            IssueAct::Commented => format!("Commented on issue #{number}"),
-        },
+        Action::RepliedToReviewComment { number } => {
+            format!("Replied to review comment on pull request #{number}")
+        }
+        Action::CreatedIssue { number } => format!("Created issue #{number}"),
+        Action::ClosedIssue { number } => format!("Closed issue #{number}"),
+        Action::CommentedOnIssue { number } => format!("Commented on issue #{number}"),
     }
 }
 

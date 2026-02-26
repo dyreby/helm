@@ -1,18 +1,15 @@
 //! Action execution: drive git and GitHub operations.
 //!
 //! Each function executes a real operation (git push, gh pr create, etc.)
-//! and returns the structured `Act` on success.
+//! and returns the structured `Action` on success.
 //! Failed operations return an error — they are not recorded in the logbook.
 
 use std::process::Command;
 
-use crate::{
-    cli::ActCommand,
-    model::{Act, IssueAct, PullRequestAct},
-};
+use crate::{cli::ActCommand, model::Action};
 
-/// Execute an action and return the structured act on success.
-pub fn execute(identity: &str, command: &ActCommand) -> Result<Act, String> {
+/// Execute an action and return the structured action on success.
+pub fn execute(identity: &str, command: &ActCommand) -> Result<Action, String> {
     match command {
         ActCommand::Push { branch } => push(branch),
         ActCommand::CreatePullRequest {
@@ -38,28 +35,24 @@ pub fn execute(identity: &str, command: &ActCommand) -> Result<Act, String> {
             comment_id,
             body,
         } => reply_to_review_comment(identity, *number, *comment_id, body),
-        ActCommand::CreateIssue {
-            title,
-            body,
-            label,
-        } => create_issue(identity, title, body.as_deref(), label),
+        ActCommand::CreateIssue { title, body, label } => {
+            create_issue(identity, title, body.as_deref(), label)
+        }
         ActCommand::CloseIssue { number, reason } => {
             close_issue(identity, *number, reason.as_deref())
         }
-        ActCommand::CommentOnIssue { number, body } => {
-            comment_on_issue(identity, *number, body)
-        }
+        ActCommand::CommentOnIssue { number, body } => comment_on_issue(identity, *number, body),
     }
 }
 
 // ── Git operations ──
 
-fn push(branch: &str) -> Result<Act, String> {
+fn push(branch: &str) -> Result<Action, String> {
     run_git(&["push", "origin", branch])?;
 
     let sha = run_git(&["rev-parse", "HEAD"])?;
 
-    Ok(Act::Pushed {
+    Ok(Action::Pushed {
         branch: branch.to_string(),
         sha: sha.trim().to_string(),
     })
@@ -74,15 +67,8 @@ fn create_pull_request(
     body: Option<&str>,
     base: Option<&str>,
     reviewer: Option<&str>,
-) -> Result<Act, String> {
-    let mut args = vec![
-        "pr",
-        "create",
-        "--head",
-        branch,
-        "--title",
-        title,
-    ];
+) -> Result<Action, String> {
+    let mut args = vec!["pr", "create", "--head", branch, "--title", title];
 
     if let Some(b) = body {
         args.extend(["--body", b]);
@@ -101,30 +87,21 @@ fn create_pull_request(
     // gh pr create outputs the PR URL; extract the number from it.
     let number = parse_pr_number(&output)?;
 
-    Ok(Act::PullRequest {
-        number,
-        act: PullRequestAct::Created,
-    })
+    Ok(Action::CreatedPullRequest { number })
 }
 
-fn merge_pull_request(identity: &str, number: u64) -> Result<Act, String> {
+fn merge_pull_request(identity: &str, number: u64) -> Result<Action, String> {
     let num = number.to_string();
     run_gh(identity, &["pr", "merge", &num, "--squash"])?;
 
-    Ok(Act::PullRequest {
-        number,
-        act: PullRequestAct::Merged,
-    })
+    Ok(Action::MergedPullRequest { number })
 }
 
-fn comment_on_pull_request(identity: &str, number: u64, body: &str) -> Result<Act, String> {
+fn comment_on_pull_request(identity: &str, number: u64, body: &str) -> Result<Action, String> {
     let num = number.to_string();
     run_gh(identity, &["pr", "comment", &num, "--body", body])?;
 
-    Ok(Act::PullRequest {
-        number,
-        act: PullRequestAct::Commented,
-    })
+    Ok(Action::CommentedOnPullRequest { number })
 }
 
 fn reply_to_review_comment(
@@ -132,10 +109,8 @@ fn reply_to_review_comment(
     number: u64,
     comment_id: u64,
     body: &str,
-) -> Result<Act, String> {
-    let endpoint = format!(
-        "repos/{{owner}}/{{repo}}/pulls/{number}/comments"
-    );
+) -> Result<Action, String> {
+    let endpoint = format!("repos/{{owner}}/{{repo}}/pulls/{number}/comments");
     let in_reply_to = comment_id.to_string();
 
     run_gh(
@@ -152,10 +127,7 @@ fn reply_to_review_comment(
         ],
     )?;
 
-    Ok(Act::PullRequest {
-        number,
-        act: PullRequestAct::Replied,
-    })
+    Ok(Action::RepliedToReviewComment { number })
 }
 
 // ── Issue operations ──
@@ -165,7 +137,7 @@ fn create_issue(
     title: &str,
     body: Option<&str>,
     labels: &[String],
-) -> Result<Act, String> {
+) -> Result<Action, String> {
     let mut args = vec!["issue", "create", "--title", title];
 
     if let Some(b) = body {
@@ -181,13 +153,10 @@ fn create_issue(
     // gh issue create outputs the issue URL; extract the number from it.
     let number = parse_issue_number(&output)?;
 
-    Ok(Act::Issue {
-        number,
-        act: IssueAct::Created,
-    })
+    Ok(Action::CreatedIssue { number })
 }
 
-fn close_issue(identity: &str, number: u64, reason: Option<&str>) -> Result<Act, String> {
+fn close_issue(identity: &str, number: u64, reason: Option<&str>) -> Result<Action, String> {
     let num = number.to_string();
     let mut args = vec!["issue", "close", &num];
 
@@ -197,20 +166,14 @@ fn close_issue(identity: &str, number: u64, reason: Option<&str>) -> Result<Act,
 
     run_gh(identity, &args)?;
 
-    Ok(Act::Issue {
-        number,
-        act: IssueAct::Closed,
-    })
+    Ok(Action::ClosedIssue { number })
 }
 
-fn comment_on_issue(identity: &str, number: u64, body: &str) -> Result<Act, String> {
+fn comment_on_issue(identity: &str, number: u64, body: &str) -> Result<Action, String> {
     let num = number.to_string();
     run_gh(identity, &["issue", "comment", &num, "--body", body])?;
 
-    Ok(Act::Issue {
-        number,
-        act: IssueAct::Commented,
-    })
+    Ok(Action::CommentedOnIssue { number })
 }
 
 // ── Helpers ──

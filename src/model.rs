@@ -11,7 +11,7 @@ mod voyage;
 
 use serde::{Deserialize, Serialize};
 
-pub use action::{Act, Action, IssueAct, PullRequestAct};
+pub use action::{Action, ActionRecord};
 pub use bearing::Bearing;
 // TODO: remove allow once TUI or CLI consumes position history.
 #[allow(unused_imports)]
@@ -31,5 +31,5 @@ pub enum LogbookEntry {
     Bearing(Bearing),
 
     /// An action was performed.
-    Action(Action),
+    Action(ActionRecord),
 }

@@ -212,11 +212,11 @@ mod tests {
         }
     }
 
-    fn sample_action() -> Action {
-        Action {
+    fn sample_action_record() -> ActionRecord {
+        ActionRecord {
             id: Uuid::new_v4(),
             identity: "john-agent".into(),
-            act: Act::Pushed {
+            action: Action::Pushed {
                 branch: "main".into(),
                 sha: "abc1234".into(),
             },
@@ -317,13 +317,13 @@ mod tests {
         storage.create_voyage(&voyage).unwrap();
 
         let bearing = sample_bearing();
-        let action = sample_action();
+        let action_record = sample_action_record();
 
         storage
             .append_entry(voyage.id, &LogbookEntry::Bearing(bearing.clone()))
             .unwrap();
         storage
-            .append_entry(voyage.id, &LogbookEntry::Action(action.clone()))
+            .append_entry(voyage.id, &LogbookEntry::Action(action_record.clone()))
             .unwrap();
 
         let entries = storage.load_logbook(voyage.id).unwrap();

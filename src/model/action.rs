@@ -7,14 +7,13 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A single thing done during a voyage.
+/// A timestamped, attributed record of an action taken during a voyage.
 ///
-/// Each action is one discrete act — push, create a PR, comment on an issue.
-/// The logbook records one action per entry.
+/// The logbook records one action record per entry.
 /// Details beyond what's captured here live on the platform (GitHub, git)
 /// and can be observed through bearings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Action {
+pub struct ActionRecord {
     /// Unique identifier.
     pub id: Uuid,
 
@@ -22,16 +21,16 @@ pub struct Action {
     pub identity: String,
 
     /// What was done.
-    pub act: Act,
+    pub action: Action,
 
     /// When the action was performed.
     pub performed_at: Timestamp,
 }
 
-/// What was done.
+/// A single discrete action taken during a voyage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum Act {
+pub enum Action {
     /// Pushed commits to a remote branch.
     Pushed {
         /// The branch that was pushed.
@@ -41,52 +40,45 @@ pub enum Act {
         sha: String,
     },
 
-    /// Did something to a pull request.
-    PullRequest {
+    /// Created a pull request.
+    CreatedPullRequest {
         /// The pull request number.
         number: u64,
-
-        /// What was done to it.
-        act: PullRequestAct,
     },
 
-    /// Did something to an issue.
-    Issue {
+    /// Merged a pull request.
+    MergedPullRequest {
+        /// The pull request number.
+        number: u64,
+    },
+
+    /// Commented on a pull request.
+    CommentedOnPullRequest {
+        /// The pull request number.
+        number: u64,
+    },
+
+    /// Replied to a review comment on a pull request.
+    RepliedToReviewComment {
+        /// The pull request number.
+        number: u64,
+    },
+
+    /// Created an issue.
+    CreatedIssue {
         /// The issue number.
         number: u64,
-
-        /// What was done to it.
-        act: IssueAct,
     },
-}
 
-/// An act performed on a pull request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum PullRequestAct {
-    /// Created the pull request.
-    Created,
+    /// Closed an issue.
+    ClosedIssue {
+        /// The issue number.
+        number: u64,
+    },
 
-    /// Merged the pull request.
-    Merged,
-
-    /// Left a comment on the pull request.
-    Commented,
-
-    /// Replied to a review comment thread.
-    Replied,
-}
-
-/// An act performed on an issue.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum IssueAct {
-    /// Created the issue.
-    Created,
-
-    /// Closed the issue.
-    Closed,
-
-    /// Left a comment on the issue.
-    Commented,
+    /// Commented on an issue.
+    CommentedOnIssue {
+        /// The issue number.
+        number: u64,
+    },
 }
