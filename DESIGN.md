@@ -169,6 +169,7 @@ Bearing {
 ```
 
 Records what was looked at (marks) and what it meant (reading).
+A bearing can reference multiple marks — you looked at several things and formed one reading.
 The bearing is the logbook's narrative unit — lightweight and self-contained.
 Bearings have no ID — identified by position in the logbook stream.
 
@@ -186,7 +187,8 @@ Observation {
 }
 ```
 
-The raw capture: what you pointed the spyglass at and what came back.
+The raw capture: one mark, one sighting.
+An observation is always a single look — one mark and what came back.
 Take as many as you want. Most are glances — quick looks that get discarded.
 The ones worth keeping are stored as artifacts alongside the bearing, but separate from it.
 Pruning observations doesn't break the logbook — the bearing still has the marks and the reading.
