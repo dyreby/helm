@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-//! Local persistence for voyages, logbooks, and moments.
+//! Local persistence for voyages and logbooks.
 //!
 //! Each voyage lives in its own directory under the storage root:
 //!
@@ -8,8 +8,6 @@
 //! <root>/<uuid>/
 //!   voyage.json      # Voyage metadata
 //!   logbook.jsonl    # Append-only logbook entries (bearings + action reports)
-//!   moments/         # Raw observation data, one file per bearing
-//!     <bearing-id>.json
 //! ```
 
 use std::{fs, io, path::PathBuf};
@@ -19,7 +17,7 @@ use io::{BufRead, Write};
 
 use uuid::Uuid;
 
-use crate::model::{LogbookEntry, MomentRecord, Voyage};
+use crate::model::{LogbookEntry, Voyage};
 
 /// Errors that can occur during storage operations.
 #[derive(Debug, thiserror::Error)]
@@ -154,24 +152,6 @@ impl Storage {
         Ok(entries)
     }
 
-    // ── Moments ──
-
-    /// Saves a moment record as an individual file under `moments/`.
-    pub fn save_moment(&self, voyage_id: Uuid, record: &MomentRecord) -> Result<()> {
-        let dir = self.voyage_dir(voyage_id);
-        if !dir.exists() {
-            return Err(StorageError::VoyageNotFound(voyage_id));
-        }
-        let moments_dir = dir.join("moments");
-        fs::create_dir_all(&moments_dir)?;
-        let json = serde_json::to_string_pretty(record)?;
-        fs::write(
-            moments_dir.join(format!("{}.json", record.bearing_id)),
-            json,
-        )?;
-        Ok(())
-    }
-
     fn voyage_dir(&self, id: Uuid) -> PathBuf {
         self.root.join(id.to_string())
     }
@@ -207,26 +187,13 @@ mod tests {
     fn sample_bearing() -> Bearing {
         Bearing {
             id: Uuid::new_v4(),
-            plan: ObservationPlan {
-                sources: vec![SourceQuery::Files {
+            observations: vec![Observation {
+                id: Uuid::new_v4(),
+                subject: Subject::Files {
                     scope: vec![PathBuf::from("src/")],
                     focus: vec![],
-                }],
-            },
-            position: Position {
-                text: "The project has a single main.rs file.".into(),
-                history: vec![],
-            },
-            taken_at: Timestamp::now(),
-        }
-    }
-
-    fn sample_moment_record(bearing_id: Uuid) -> MomentRecord {
-        MomentRecord {
-            bearing_id,
-            observed_at: Timestamp::now(),
-            moment: Moment {
-                observations: vec![Observation::Files {
+                },
+                sighting: Sighting::Files {
                     survey: vec![DirectorySurvey {
                         path: PathBuf::from("src/"),
                         entries: vec![DirectoryEntry {
@@ -236,8 +203,14 @@ mod tests {
                         }],
                     }],
                     inspections: vec![],
-                }],
+                },
+                observed_at: Timestamp::now(),
+            }],
+            position: Position {
+                text: "The project has a single main.rs file.".into(),
+                history: vec![],
             },
+            taken_at: Timestamp::now(),
         }
     }
 
@@ -386,25 +359,5 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, StorageError::VoyageNotFound(_)));
-    }
-
-    #[test]
-    fn save_and_load_moment() {
-        let (_dir, storage) = test_storage();
-        let voyage = sample_voyage();
-        storage.create_voyage(&voyage).unwrap();
-
-        let bearing_id = Uuid::new_v4();
-        let record = sample_moment_record(bearing_id);
-        storage.save_moment(voyage.id, &record).unwrap();
-
-        // Verify the file exists as an individual JSON file.
-        let path = storage
-            .voyage_dir(voyage.id)
-            .join("moments")
-            .join(format!("{bearing_id}.json"));
-        let content = fs::read_to_string(path).unwrap();
-        let parsed: MomentRecord = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed.bearing_id, bearing_id);
     }
 }

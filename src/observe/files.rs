@@ -5,7 +5,7 @@
 
 use std::{fs, path::Path};
 
-use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation};
+use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Sighting};
 
 /// Observe the filesystem: survey directories, inspect files.
 ///
@@ -14,11 +14,11 @@ use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection,
 ///
 /// Paths that don't exist or can't be read produce error entries rather than panics.
 /// Observation is always total.
-pub fn observe_files(scope: &[impl AsRef<Path>], focus: &[impl AsRef<Path>]) -> Observation {
+pub fn observe_files(scope: &[impl AsRef<Path>], focus: &[impl AsRef<Path>]) -> Sighting {
     let survey = scope.iter().map(|p| survey_directory(p.as_ref())).collect();
     let inspections = focus.iter().map(|p| inspect_file(p.as_ref())).collect();
 
-    Observation::Files {
+    Sighting::Files {
         survey,
         inspections,
     }
@@ -93,7 +93,7 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::model::{FileContent, Observation};
+    use crate::model::Sighting;
 
     /// Helper: create a temp directory with some files.
     fn setup_test_dir() -> TempDir {
@@ -113,7 +113,7 @@ mod tests {
         let scope = vec![dir.path().to_path_buf()];
 
         let obs = observe_files(&scope, &Vec::<PathBuf>::new());
-        let Observation::Files {
+        let Sighting::Files {
             survey,
             inspections,
         } = obs;
@@ -133,7 +133,7 @@ mod tests {
         let dir = setup_test_dir();
         let scope = vec![dir.path().to_path_buf()];
 
-        let Observation::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
+        let Sighting::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
         let listing = &survey[0];
 
         let hello = listing
@@ -161,7 +161,7 @@ mod tests {
     fn survey_nonexistent_directory_returns_empty_entries() {
         let scope = vec![PathBuf::from("/nonexistent/path/that/should/not/exist")];
 
-        let Observation::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
+        let Sighting::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
         assert_eq!(survey.len(), 1);
         assert_eq!(
             survey[0].path,
@@ -175,7 +175,7 @@ mod tests {
         let dir = setup_test_dir();
         let scope = vec![dir.path().to_path_buf(), dir.path().join("subdir")];
 
-        let Observation::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
+        let Sighting::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
         assert_eq!(survey.len(), 2);
 
         // First directory has 3 entries.
@@ -191,7 +191,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let scope = vec![dir.path().to_path_buf()];
 
-        let Observation::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
+        let Sighting::Files { survey, .. } = observe_files(&scope, &Vec::<PathBuf>::new());
         assert_eq!(survey.len(), 1);
         assert!(survey[0].entries.is_empty());
     }
@@ -203,7 +203,7 @@ mod tests {
         fs::write(dir.path().join("alpha.txt"), "a").unwrap();
         fs::write(dir.path().join("middle.txt"), "m").unwrap();
 
-        let Observation::Files { survey, .. } =
+        let Sighting::Files { survey, .. } =
             observe_files(&[dir.path().to_path_buf()], &Vec::<PathBuf>::new());
 
         let names: Vec<&str> = survey[0].entries.iter().map(|e| e.name.as_str()).collect();
@@ -217,7 +217,7 @@ mod tests {
         let dir = setup_test_dir();
         let focus = vec![dir.path().join("hello.txt")];
 
-        let Observation::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
+        let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert_eq!(inspections.len(), 1);
         assert_eq!(inspections[0].path, focus[0]);
@@ -229,7 +229,7 @@ mod tests {
         let dir = setup_test_dir();
         let focus = vec![dir.path().join("empty.txt")];
 
-        let Observation::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
+        let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert!(matches!(&inspections[0].content, FileContent::Text(s) if s.is_empty()));
     }
@@ -243,7 +243,7 @@ mod tests {
 
         let focus = vec![binary_path.clone()];
 
-        let Observation::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
+        let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert_eq!(inspections.len(), 1);
         assert!(matches!(
@@ -256,7 +256,7 @@ mod tests {
     fn inspect_nonexistent_file_returns_error() {
         let focus = vec![PathBuf::from("/nonexistent/file.txt")];
 
-        let Observation::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
+        let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert_eq!(inspections.len(), 1);
         assert!(matches!(&inspections[0].content, FileContent::Error(_)));
@@ -271,7 +271,7 @@ mod tests {
 
         let focus = vec![path.clone()];
 
-        let Observation::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
+        let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert!(matches!(&inspections[0].content, FileContent::Error(_)));
 
@@ -288,7 +288,7 @@ mod tests {
             dir.path().join("subdir").join("nested.txt"),
         ];
 
-        let Observation::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
+        let Sighting::Files { inspections, .. } = observe_files(&Vec::<PathBuf>::new(), &focus);
 
         assert_eq!(inspections.len(), 3);
         assert!(matches!(&inspections[0].content, FileContent::Text(s) if s == "hello world"));
@@ -304,7 +304,7 @@ mod tests {
         let scope = vec![dir.path().to_path_buf()];
         let focus = vec![dir.path().join("hello.txt")];
 
-        let Observation::Files {
+        let Sighting::Files {
             survey,
             inspections,
         } = observe_files(&scope, &focus);
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn empty_scope_and_focus() {
-        let Observation::Files {
+        let Sighting::Files {
             survey,
             inspections,
         } = observe_files(&Vec::<PathBuf>::new(), &Vec::<PathBuf>::new());
@@ -330,14 +330,14 @@ mod tests {
     // ── observe() dispatch test ──
 
     #[test]
-    fn observe_dispatches_files_query() {
+    fn observe_dispatches_files_subject() {
         let dir = setup_test_dir();
-        let query = crate::model::SourceQuery::Files {
+        let subject = crate::model::Subject::Files {
             scope: vec![dir.path().to_path_buf()],
             focus: vec![dir.path().join("hello.txt")],
         };
 
-        let obs = crate::observe::observe(&query);
-        assert!(matches!(obs, Observation::Files { .. }));
+        let sighting = crate::observe::observe(&subject);
+        assert!(matches!(sighting, Sighting::Files { .. }));
     }
 }

@@ -4,51 +4,49 @@
 //!
 //! A bearing is built in two steps:
 //!
-//! 1. **Observe** — execute a plan and produce a moment (raw observation).
-//!    The caller reviews the moment before proceeding.
-//! 2. **Record** — attach a position to the plan, producing the final immutable bearing.
-//!    The moment is stored separately, linked by ID.
+//! 1. **Observe** — take one or more observations of the world.
+//!    Each observation captures a subject and its sighting.
+//! 2. **Record** — select the observations that matter,
+//!    attach a position, and seal the bearing.
 
 use uuid::Uuid;
 
-use crate::model::{Bearing, Moment, MomentRecord, Observation, ObservationPlan, Position};
+use crate::model::{Bearing, Observation, Position, Subject};
 
-/// Execute an observation plan and return the moment record.
+/// Take a single observation: look at a subject and record what was seen.
 ///
-/// The caller reviews the moment, then calls `record_bearing` with a position.
-/// The `MomentRecord` carries its own `bearing_id` and `observed_at` timestamp.
-pub fn observe(plan: &ObservationPlan) -> Result<MomentRecord, &'static str> {
-    if plan.sources.is_empty() {
-        return Err("observation plan must have at least one source query");
-    }
+/// Returns a self-contained `Observation` with its own ID and timestamp.
+/// The caller decides whether to include it in a bearing or discard it.
+pub fn observe(subject: &Subject) -> Observation {
+    let sighting = crate::observe::observe(subject);
 
-    let bearing_id = Uuid::new_v4();
-    let observations: Vec<Observation> = plan.sources.iter().map(crate::observe::observe).collect();
-    let moment = Moment { observations };
-
-    Ok(MomentRecord {
-        bearing_id,
+    Observation {
+        id: Uuid::new_v4(),
+        subject: subject.clone(),
+        sighting,
         observed_at: jiff::Timestamp::now(),
-        moment,
-    })
+    }
 }
 
-/// Assemble a bearing from a plan, moment record, and position text.
+/// Assemble a bearing from observations and a position.
 ///
-/// Call this after reviewing the moment from `observe`.
-/// The bearing carries the plan and position; the moment is stored separately.
+/// Call this after taking one or more observations.
+/// The bearing seals the selected observations with your read on the world.
 pub fn record_bearing(
-    plan: ObservationPlan,
-    moment_record: &MomentRecord,
+    observations: Vec<Observation>,
     position_text: String,
 ) -> Result<Bearing, &'static str> {
+    if observations.is_empty() {
+        return Err("bearing must include at least one observation");
+    }
+
     if position_text.trim().is_empty() {
         return Err("position text cannot be empty");
     }
 
     Ok(Bearing {
-        id: moment_record.bearing_id,
-        plan,
+        id: Uuid::new_v4(),
+        observations,
         position: Position {
             text: position_text,
             history: Vec::new(),
@@ -59,32 +57,29 @@ pub fn record_bearing(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::fs;
 
     use tempfile::TempDir;
 
-    use crate::model::{Observation, ObservationPlan, SourceQuery};
+    use crate::model::Sighting;
+
+    use super::*;
 
     #[test]
     fn observe_then_record() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("test.txt"), "hello").unwrap();
 
-        let plan = ObservationPlan {
-            sources: vec![SourceQuery::Files {
-                scope: vec![dir.path().to_path_buf()],
-                focus: vec![dir.path().join("test.txt")],
-            }],
+        let subject = Subject::Files {
+            scope: vec![dir.path().to_path_buf()],
+            focus: vec![dir.path().join("test.txt")],
         };
 
         // Step 1: observe.
-        let moment_record = observe(&plan).unwrap();
+        let observation = observe(&subject);
 
-        // Caller reviews the moment.
-        match &moment_record.moment.observations[0] {
-            Observation::Files {
+        match &observation.sighting {
+            Sighting::Files {
                 survey,
                 inspections,
             } => {
@@ -94,49 +89,71 @@ mod tests {
         }
 
         // Step 2: record with position.
-        let bearing = record_bearing(plan, &moment_record, "One test file.".to_string()).unwrap();
+        let bearing = record_bearing(vec![observation], "One test file.".to_string()).unwrap();
         assert_eq!(bearing.position.text, "One test file.");
-        assert_eq!(bearing.plan.sources.len(), 1);
-        assert_eq!(bearing.id, moment_record.bearing_id);
+        assert_eq!(bearing.observations.len(), 1);
     }
 
     #[test]
-    fn rejects_empty_plan() {
-        let plan = ObservationPlan { sources: vec![] };
-        let err = observe(&plan).unwrap_err();
-        assert_eq!(err, "observation plan must have at least one source query");
+    fn multiple_observations_in_one_bearing() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("a.txt"), "aaa").unwrap();
+        fs::write(dir.path().join("b.txt"), "bbb").unwrap();
+
+        let obs1 = observe(&Subject::Files {
+            scope: vec![dir.path().to_path_buf()],
+            focus: vec![],
+        });
+
+        let obs2 = observe(&Subject::Files {
+            scope: vec![],
+            focus: vec![dir.path().join("a.txt")],
+        });
+
+        let bearing = record_bearing(
+            vec![obs1, obs2],
+            "Directory has two files, inspected one.".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(bearing.observations.len(), 2);
+    }
+
+    #[test]
+    fn rejects_empty_observations() {
+        let err = record_bearing(vec![], "Some position.".to_string()).unwrap_err();
+        assert_eq!(err, "bearing must include at least one observation");
     }
 
     #[test]
     fn rejects_empty_position() {
         let dir = TempDir::new().unwrap();
-        let plan = ObservationPlan {
-            sources: vec![SourceQuery::Files {
-                scope: vec![dir.path().to_path_buf()],
-                focus: vec![],
-            }],
-        };
+        let observation = observe(&Subject::Files {
+            scope: vec![dir.path().to_path_buf()],
+            focus: vec![],
+        });
 
-        let moment_record = observe(&plan).unwrap();
-        let err = record_bearing(plan, &moment_record, "  ".to_string()).unwrap_err();
+        let err = record_bearing(vec![observation], "  ".to_string()).unwrap_err();
         assert_eq!(err, "position text cannot be empty");
     }
 
     #[test]
-    fn survey_only_bearing() {
+    fn discard_observation_not_in_bearing() {
         let dir = TempDir::new().unwrap();
-        let plan = ObservationPlan {
-            sources: vec![SourceQuery::Files {
-                scope: vec![dir.path().to_path_buf()],
-                focus: vec![],
-            }],
-        };
+        fs::write(dir.path().join("a.txt"), "aaa").unwrap();
 
-        let moment_record = observe(&plan).unwrap();
-        let bearing = record_bearing(plan, &moment_record, "Survey only.".to_string()).unwrap();
+        let keep = observe(&Subject::Files {
+            scope: vec![dir.path().to_path_buf()],
+            focus: vec![],
+        });
 
-        // The bearing doesn't carry the moment anymore — just verify it sealed.
-        assert_eq!(bearing.position.text, "Survey only.");
-        assert_eq!(bearing.id, moment_record.bearing_id);
+        // Take another observation but don't include it.
+        let _discard = observe(&Subject::Files {
+            scope: vec![],
+            focus: vec![dir.path().join("a.txt")],
+        });
+
+        let bearing = record_bearing(vec![keep], "Only the survey matters.".to_string()).unwrap();
+        assert_eq!(bearing.observations.len(), 1);
     }
 }
