@@ -66,6 +66,8 @@ Position defaults to a single generation. If it feels wrong, I can challenge it 
 
 Bearings are deterministic given the same subjects and world state. Position is clearly labeled as agent-generated interpretation.
 
+Bearings exist for continuity. You take one when you'd need context if you had to stop and come back in a new session — the position captures where things stand so the next session doesn't start from scratch. If a voyage finishes in one session, the completion summary is often the only record needed.
+
 ### Correct Position
 
 Refine the agent's read on the situation. Sometimes the position is wrong, or it misses something I know. I can challenge it, add context ("that CI failure is a flake"), or guide the agent toward a more accurate statement.
