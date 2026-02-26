@@ -4,9 +4,7 @@ Helm is how I want to work with a coding agent.
 
 ## Why
 
-My [collaboration framework](https://github.com/dyreby/collaboration-framework) captures how I think about working with a coding agent. The concepts work, but the mechanism — prompt extensions injected into an agent's system prompt — kept producing friction. The agent forgot context, expanded scope silently, and made decisions I expected to make.
-
-The root cause is architectural: an autonomous agent with tools is the wrong shape. I want to set the course, trust the agent to crew the voyage, and know what happened — not approve every step. Helm is how I put that into practice at a terminal.
+Built on [dyreby/collaboration-framework](https://github.com/dyreby/collaboration-framework). The concepts work, but the mechanism — prompt extensions — kept producing friction. The root cause is architectural: an autonomous agent with tools is the wrong shape. I want to set the course, trust the agent to crew the voyage, and know what happened — not approve every step.
 
 ## Voyages
 
