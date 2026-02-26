@@ -11,4 +11,4 @@ replacing prompt engineering with structured, composable CLI commands.
 **This is a personal tool.** It reflects how I think and work.
 If it resonates with you, that's great — explore, ask questions, take ideas, fork it.
 
-See [CHARTER.md](CHARTER.md) for the purpose. See [VISION.md](VISION.md) for the design.
+See [CHARTER.md](CHARTER.md) for the purpose, [VISION.md](VISION.md) for the approach, and [DESIGN.md](DESIGN.md) for the specifics.
