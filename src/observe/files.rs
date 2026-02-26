@@ -202,7 +202,11 @@ mod tests {
         let Sighting::Files { listings, .. } =
             observe_files(&[dir.path().to_path_buf()], &Vec::<PathBuf>::new());
 
-        let names: Vec<&str> = listings[0].entries.iter().map(|e| e.name.as_str()).collect();
+        let names: Vec<&str> = listings[0]
+            .entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
         assert_eq!(names, ["alpha.txt", "middle.txt", "zebra.txt"]);
     }
 
@@ -229,9 +233,7 @@ mod tests {
 
         let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read);
 
-        assert!(
-            matches!(&contents[0].content, FileContent::Text { content: s } if s.is_empty())
-        );
+        assert!(matches!(&contents[0].content, FileContent::Text { content: s } if s.is_empty()));
     }
 
     #[test]
@@ -294,12 +296,8 @@ mod tests {
         assert!(
             matches!(&contents[0].content, FileContent::Text { content: s } if s == "hello world")
         );
-        assert!(
-            matches!(&contents[1].content, FileContent::Text { content: s } if s.is_empty())
-        );
-        assert!(
-            matches!(&contents[2].content, FileContent::Text { content: s } if s == "nested")
-        );
+        assert!(matches!(&contents[1].content, FileContent::Text { content: s } if s.is_empty()));
+        assert!(matches!(&contents[2].content, FileContent::Text { content: s } if s == "nested"));
     }
 
     // ── Combined tests ──

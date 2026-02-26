@@ -253,7 +253,11 @@ mod tests {
             .iter()
             .find(|s| s.path == dir.path().join("src"))
             .unwrap();
-        let names: Vec<&str> = src_listing.entries.iter().map(|e| e.name.as_str()).collect();
+        let names: Vec<&str> = src_listing
+            .entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
         assert!(names.contains(&"main.rs"));
         assert!(names.contains(&"lib.rs"));
     }
