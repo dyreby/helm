@@ -13,6 +13,7 @@ use super::{reading::Reading, source::Observation};
 ///
 /// Bearings are identified by position in the logbook stream, not by ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Bearing {
     /// The observations that inform this bearing.
     pub observations: Vec<Observation>,

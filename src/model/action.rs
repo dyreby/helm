@@ -15,6 +15,7 @@ use uuid::Uuid;
 /// Content (PR bodies, comment text) lives on GitHub and can be
 /// observed through bearings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Action {
     pub id: Uuid,
 
@@ -30,7 +31,7 @@ pub struct Action {
 
 /// What was done. Grouped by target, not by verb.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Act {
     /// Pushed commits to a branch.
     Pushed { branch: String, sha: String },
@@ -44,7 +45,7 @@ pub enum Act {
 
 /// Things you can do to a pull request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum PullRequestAct {
     /// Created a new pull request.
     Created,
@@ -66,7 +67,7 @@ pub enum PullRequestAct {
 
 /// Things you can do to an issue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum IssueAct {
     /// Created a new issue.
     Created,
