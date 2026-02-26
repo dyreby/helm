@@ -500,14 +500,12 @@ enum VoyageStatus {
 Each mark describes a domain of observable reality — not a mechanism.
 Commands are how Helm fetches data; marks describe what Helm is looking at.
 
-| Kind | Structure | Content | Status |
-|------|----------|---------|--------|
-| **Files** | Directory listings with metadata | File contents | Implemented |
-| **RustProject** | Full project tree | Documentation files | Implemented |
-| **GitHub** | PR/issue metadata, check summaries | Diffs, comment bodies, threads | Planned |
-| **Context** | — | — | Planned |
-| **Web** | Status and headers | Response bodies | Future |
-| **Search** | Hit lists with locations | Matches with context | Future |
+- **Files** — directory listings with metadata, file contents. Implemented.
+- **RustProject** — full project tree, documentation files. Implemented.
+- **GitHub** — PR/issue metadata, check summaries, diffs, comment bodies, threads. Planned.
+- **Context** — human-provided context with no system-observable source. Planned.
+- **Web** — status, headers, response bodies. Future.
+- **Search** — hit lists with locations, matches with context. Future.
 
 Web-based kinds graduate to their own domain when their observation semantics are rich enough.
 GitHub is the first domain that graduated.

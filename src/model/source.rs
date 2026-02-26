@@ -46,8 +46,8 @@ pub enum Mark {
     /// A Rust project rooted at a directory.
     ///
     /// Walks the project tree, respects `.gitignore`, skips `target/`.
-    /// Survey: full directory tree with metadata.
-    /// Focus: all source files (everything that isn't binary or ignored).
+    /// Lists the full directory tree with metadata.
+    /// Reads documentation files (everything else is left for targeted `Files` queries).
     RustProject { root: PathBuf },
 }
 
@@ -87,7 +87,7 @@ pub struct FileContents {
     pub content: FileContent,
 }
 
-/// What was found when inspecting a file.
+/// What was found when reading a file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum FileContent {
