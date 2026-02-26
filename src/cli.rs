@@ -8,8 +8,8 @@
 //! - `helm voyage` — lifecycle commands grouped under the domain concept.
 //! - `helm observe`, `helm record` — flat verbs, unambiguous on their own.
 //!
-//! Observing outputs a moment (what was seen) to stdout or a file.
-//! Recording attaches a position to a moment and writes the bearing to the logbook.
+//! Observing outputs an observation (subject + sighting) to stdout or a file.
+//! Recording selects observations, attaches a position, and writes the bearing to the logbook.
 
 use std::{fs, io, path::PathBuf};
 
@@ -17,14 +17,13 @@ use std::{fs, io, path::PathBuf};
 use io::Read;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::bearing;
-use crate::model::{
-    LogbookEntry, MomentRecord, ObservationPlan, SourceQuery, Voyage, VoyageKind, VoyageStatus,
+use crate::{
+    bearing,
+    model::{LogbookEntry, Observation, Subject, Voyage, VoyageKind, VoyageStatus},
+    storage::Storage,
 };
-use crate::storage::Storage;
 
 /// Helm — navigate your work.
 #[derive(Debug, Parser)]
@@ -45,21 +44,21 @@ pub enum Command {
     /// Observe the world and output what was seen.
     ///
     /// Pure read, no side effects, repeatable.
-    /// The moment is written as JSON to `--out` (if given) or stdout.
+    /// The observation is written as JSON to `--out` (if given) or stdout.
     /// A human-readable summary is printed to stderr when writing to a file.
     Observe {
         #[command(subcommand)]
         source: ObserveSource,
 
-        /// Write the moment JSON to this file instead of stdout.
+        /// Write the observation JSON to this file instead of stdout.
         #[arg(long, global = true)]
         out: Option<PathBuf>,
     },
 
-    /// Record a bearing: attach a position to an observation.
+    /// Record a bearing: attach a position to one or more observations.
     ///
-    /// Reads the moment from `--moment` (file) or stdin, attaches the position,
-    /// and writes the bearing to the logbook and the moment to `moments.jsonl`.
+    /// Reads observations from `--observation` files or stdin (single observation),
+    /// attaches the position, and writes the bearing to the logbook.
     Record {
         /// Voyage ID (full UUID or unambiguous prefix).
         voyage: String,
@@ -67,10 +66,11 @@ pub enum Command {
         /// Your read on the state of the world.
         position: String,
 
-        /// Path to the moment JSON file (from `helm observe --out`).
-        /// Reads from stdin if not provided.
+        /// Paths to observation JSON files (from `helm observe --out`).
+        /// Pass multiple times for multi-observation bearings.
+        /// Reads a single observation from stdin if not provided.
         #[arg(long)]
-        moment: Option<PathBuf>,
+        observation: Vec<PathBuf>,
     },
 }
 
@@ -91,7 +91,7 @@ pub enum VoyageCommand {
 
     /// Show a voyage's logbook: the trail of bearings and actions.
     ///
-    /// Displays plans and positions for each bearing, and outcomes for each action.
+    /// Displays observations and positions for each bearing, and outcomes for each action.
     /// The logbook tells the story through positions.
     Log {
         /// Voyage ID (full UUID or unambiguous prefix).
@@ -152,8 +152,8 @@ pub fn run(storage: &Storage) -> Result<(), String> {
         Command::Record {
             voyage,
             position,
-            moment,
-        } => cmd_record(storage, &voyage, &position, moment),
+            observation,
+        } => cmd_record(storage, &voyage, &position, &observation),
     }
 }
 
@@ -202,40 +202,28 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
 }
 
 fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), String> {
-    let plan = match source {
-        ObserveSource::RustProject { path } => ObservationPlan {
-            sources: vec![SourceQuery::RustProject { root: path.clone() }],
-        },
+    let subject = match source {
+        ObserveSource::RustProject { path } => Subject::RustProject { root: path.clone() },
         ObserveSource::Files { scope, focus } => {
             if scope.is_empty() && focus.is_empty() {
                 return Err("specify at least one --scope or --focus".to_string());
             }
-            ObservationPlan {
-                sources: vec![SourceQuery::Files {
-                    scope: scope.clone(),
-                    focus: focus.clone(),
-                }],
+            Subject::Files {
+                scope: scope.clone(),
+                focus: focus.clone(),
             }
         }
     };
 
-    let moment_record = bearing::observe(&plan).map_err(|e| format!("observation failed: {e}"))?;
+    let observation = bearing::observe(&subject);
 
-    // Serialize the observation output: plan + moment record together,
-    // so `helm record` has everything it needs.
-    let output = ObservationOutput {
-        plan,
-        moment_record,
-    };
-
-    let json = serde_json::to_string_pretty(&output)
-        .map_err(|e| format!("failed to serialize moment: {e}"))?;
+    let json = serde_json::to_string_pretty(&observation)
+        .map_err(|e| format!("failed to serialize observation: {e}"))?;
 
     match out {
         Some(path) => {
             fs::write(&path, &json)
                 .map_err(|e| format!("failed to write {}: {e}", path.display()))?;
-            // Summary to stderr so the agent sees it regardless.
             eprintln!("Observation written to {}", path.display());
         }
         None => {
@@ -250,36 +238,41 @@ fn cmd_record(
     storage: &Storage,
     voyage_ref: &str,
     position: &str,
-    moment_path: Option<PathBuf>,
+    observation_paths: &[PathBuf],
 ) -> Result<(), String> {
     let voyage = resolve_voyage(storage, voyage_ref)?;
 
-    // Read the observation output from file or stdin.
-    let json = if let Some(path) = moment_path {
-        fs::read_to_string(&path).map_err(|e| format!("failed to read {}: {e}", path.display()))?
-    } else {
+    // Load observations from files or stdin.
+    let observations = if observation_paths.is_empty() {
+        // Read a single observation from stdin.
         let mut buf = String::new();
         io::stdin()
             .read_to_string(&mut buf)
             .map_err(|e| format!("failed to read stdin: {e}"))?;
-        buf
+        let obs: Observation =
+            serde_json::from_str(&buf).map_err(|e| format!("invalid observation JSON: {e}"))?;
+        vec![obs]
+    } else {
+        // Read each observation file.
+        observation_paths
+            .iter()
+            .map(|path| {
+                let json = fs::read_to_string(path)
+                    .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+                serde_json::from_str(&json)
+                    .map_err(|e| format!("invalid observation JSON in {}: {e}", path.display()))
+            })
+            .collect::<Result<Vec<Observation>, String>>()?
     };
 
-    let output: ObservationOutput =
-        serde_json::from_str(&json).map_err(|e| format!("invalid moment JSON: {e}"))?;
-
     // Seal the bearing.
-    let sealed = bearing::record_bearing(output.plan, &output.moment_record, position.to_string())
+    let sealed = bearing::record_bearing(observations, position.to_string())
         .map_err(|e| format!("failed to record bearing: {e}"))?;
 
-    // Write bearing to logbook and moment to moments file.
+    // Write bearing to logbook.
     storage
         .append_entry(voyage.id, &LogbookEntry::Bearing(sealed.clone()))
         .map_err(|e| format!("failed to save bearing: {e}"))?;
-
-    storage
-        .save_moment(voyage.id, &output.moment_record)
-        .map_err(|e| format!("failed to save moment: {e}"))?;
 
     let short_id = &sealed.id.to_string()[..8];
     eprintln!(
@@ -313,10 +306,10 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
             LogbookEntry::Bearing(b) => {
                 let short_id = &b.id.to_string()[..8];
                 println!("── Bearing {} ({short_id}) ── {}", i + 1, b.taken_at);
-                for source in &b.plan.sources {
-                    match source {
-                        SourceQuery::Files { scope, focus } => {
-                            println!("  Source: Files");
+                for obs in &b.observations {
+                    match &obs.subject {
+                        Subject::Files { scope, focus } => {
+                            println!("  Subject: Files");
                             for s in scope {
                                 println!("    scope: {}", s.display());
                             }
@@ -324,8 +317,8 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
                                 println!("    focus: {}", f.display());
                             }
                         }
-                        SourceQuery::RustProject { root } => {
-                            println!("  Source: RustProject @ {}", root.display());
+                        Subject::RustProject { root } => {
+                            println!("  Subject: RustProject @ {}", root.display());
                         }
                     }
                 }
@@ -376,14 +369,4 @@ fn resolve_voyage(storage: &Storage, reference: &str) -> Result<Voyage, String> 
             ))
         }
     }
-}
-
-/// The full output of `helm observe`, consumed by `helm record`.
-///
-/// Bundles the plan and moment record so `helm record` has everything it needs
-/// to seal a bearing without re-observing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ObservationOutput {
-    plan: ObservationPlan,
-    moment_record: MomentRecord,
 }

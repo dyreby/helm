@@ -12,7 +12,7 @@ use std::{
 
 use ignore::WalkBuilder;
 
-use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation};
+use crate::model::{DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Sighting};
 
 /// Well-known documentation file names (case-insensitive matching).
 ///
@@ -73,7 +73,7 @@ fn is_doc_file(path: &Path, root: &Path) -> bool {
 /// Uses the `ignore` crate to respect `.gitignore` and skips `target/`.
 /// The tree gives structure; docs give intent and context.
 /// Source files are left for targeted `Files` queries on subsequent bearings.
-pub fn observe_rust_project(root: &Path) -> Observation {
+pub fn observe_rust_project(root: &Path) -> Sighting {
     let mut dir_entries: BTreeMap<PathBuf, Vec<DirectoryEntry>> = BTreeMap::new();
     let mut inspections: Vec<FileInspection> = Vec::new();
 
@@ -136,7 +136,7 @@ pub fn observe_rust_project(root: &Path) -> Observation {
         .map(|(path, entries)| DirectorySurvey { path, entries })
         .collect();
 
-    Observation::Files {
+    Sighting::Files {
         survey: surveys,
         inspections,
     }
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn tree_includes_all_non_ignored_entries() {
         let dir = setup_rust_project();
-        let Observation::Files {
+        let Sighting::Files {
             survey,
             inspections: _,
         } = observe_rust_project(dir.path());
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn inspects_only_docs() {
         let dir = setup_rust_project();
-        let Observation::Files { inspections, .. } = observe_rust_project(dir.path());
+        let Sighting::Files { inspections, .. } = observe_rust_project(dir.path());
 
         let paths: Vec<String> = inspections
             .iter()
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn skips_target_directory() {
         let dir = setup_rust_project();
-        let Observation::Files {
+        let Sighting::Files {
             survey,
             inspections,
         } = observe_rust_project(dir.path());
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn tree_includes_nested_structure() {
         let dir = setup_rust_project();
-        let Observation::Files {
+        let Sighting::Files {
             survey,
             inspections: _,
         } = observe_rust_project(dir.path());

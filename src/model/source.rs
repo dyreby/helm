@@ -6,13 +6,33 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A domain-specific query describing what to survey and what to inspect.
+/// A self-contained observation: what you pointed the spyglass at and what you saw.
 ///
-/// Each variant owns its natural scope and focus types.
-/// Adding a new source kind means adding a variant here and implementing its survey/inspect logic.
+/// Observations are the building blocks of bearings.
+/// Take as many as you want; only the ones you choose to record become part of a bearing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Observation {
+    /// Unique identifier for this observation.
+    pub id: Uuid,
+
+    /// What was observed.
+    pub subject: Subject,
+
+    /// What was seen.
+    pub sighting: Sighting,
+
+    /// When the observation was made.
+    pub observed_at: Timestamp,
+}
+
+/// The subject of an observation: what you pointed the spyglass at.
+///
+/// Each variant describes a domain-specific scope.
+/// Adding a new source kind means adding a variant here
+/// and implementing its observation logic.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum SourceQuery {
+pub enum Subject {
     /// Filesystem structure and content.
     ///
     /// Scope: directories to survey (list contents with metadata).
@@ -30,19 +50,11 @@ pub enum SourceQuery {
     RustProject { root: PathBuf },
 }
 
-/// What was observed when a bearing was taken.
-///
-/// Contains the raw payloads from each source kind in the bearing plan.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Moment {
-    pub observations: Vec<Observation>,
-}
-
-/// The result of executing a single source query.
+/// What was seen when observing a subject.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum Observation {
-    /// Results from a Files source query.
+pub enum Sighting {
+    /// Results from observing a filesystem subject.
     Files {
         /// Directory listings from surveyed paths.
         survey: Vec<DirectorySurvey>,
@@ -85,22 +97,4 @@ pub enum FileContent {
 
     /// File could not be read.
     Error(String),
-}
-
-/// A moment record stored in `moments.jsonl`, linked to a bearing by ID.
-///
-/// Moments are the raw observation data — what the world actually looked like.
-/// They live separately from the logbook because they're large and pruneable.
-/// The bearing in the logbook carries the plan and position (the story);
-/// the moment carries the evidence.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MomentRecord {
-    /// The bearing this moment belongs to.
-    pub bearing_id: Uuid,
-
-    /// When the observation was made (before the position was written).
-    pub observed_at: Timestamp,
-
-    /// The raw observation data.
-    pub moment: Moment,
 }

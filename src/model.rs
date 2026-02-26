@@ -1,9 +1,10 @@
 //! Core data model for Helm.
 //!
-//! These types represent the conceptual architecture from VISION.md:
-//! voyages, bearings, plans, moments, positions, and actions.
+//! These types represent the conceptual architecture:
+//! voyages, bearings, observations, sightings, positions, and actions.
 
-#![allow(dead_code, unused_imports)]
+// TODO(#8): remove allow when action types are wired to CLI.
+#![allow(unused_imports)]
 
 mod action;
 mod bearing;
@@ -14,11 +15,10 @@ mod voyage;
 use serde::{Deserialize, Serialize};
 
 pub use action::{ActionOutcome, ActionPlan, ActionReport, FileEdit, FileWrite};
-pub use bearing::{Bearing, ObservationPlan};
+pub use bearing::Bearing;
 pub use position::{Position, PositionAttempt, PositionSource};
 pub use source::{
-    DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Moment, MomentRecord,
-    Observation, SourceQuery,
+    DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation, Sighting, Subject,
 };
 pub use voyage::{Voyage, VoyageKind, VoyageStatus};
 
