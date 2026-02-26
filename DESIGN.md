@@ -12,7 +12,7 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 |------|---------------|-----------|
 | **Voyage** | A unit of work with intent, logbook, and outcome | `Voyage` |
 | **Logbook** | Append-only record of a voyage's bearings and actions | `Vec<LogbookEntry>` |
-| **Bearing** | What was looked at and what it meant — marks + reading | `Bearing` |
+| **Bearing** | What was looked at and what it meant — mark + reading | `Bearing` |
 | **Observation** | What was looked at and what was seen — mark + sighting | `Observation` |
 | **Mark** | What you pointed the spyglass at — a domain of observable reality | `Mark` |
 | **Sighting** | The raw data returned when observing a mark | `Sighting` |
