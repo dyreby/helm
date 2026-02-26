@@ -27,11 +27,25 @@ use crate::{
 
 /// Helm — navigate your work.
 #[derive(Debug, Parser)]
-#[command(name = "helm")]
+#[command(name = "helm", after_long_help = WORKFLOW_HELP)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
+
+const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
+  1. helm voyage new "Resolve #42: fix widget crash" --kind resolve-issue
+     → prints a voyage ID (e.g. a3b0fc12)
+  2. Do the work — fix the bug, open the PR, get it merged.
+  3. helm voyage complete a3b --summary "Fixed null check in widget init"
+
+Stopping mid-voyage? Record a bearing so the next session has context:
+  helm observe rust-project . --out obs.json
+  helm record a3b "Halfway through, refactoring widget module" --observation obs.json
+
+Check on voyages:
+  helm voyage list           → see active voyages
+  helm voyage log a3b        → see the trail of bearings and actions"#;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -59,6 +73,11 @@ pub enum Command {
     ///
     /// Reads observations from `--observation` files or stdin (single observation),
     /// attaches the position, and writes the bearing to the logbook.
+    ///
+    /// Bearings exist for continuity, not just documentation.
+    /// Record one when you'd need context if you had to stop and come back
+    /// in a new session. If you're finishing in this session, skip the bearing
+    /// and use `helm voyage complete --summary` instead.
     Record {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
@@ -100,8 +119,10 @@ pub enum VoyageCommand {
 
     /// Mark a voyage as completed.
     ///
-    /// Updates the voyage status and records a completion entry in the logbook.
-    /// Optionally accepts a summary of what was accomplished or learned.
+    /// Updates the voyage status to completed.
+    /// The summary captures the outcome — what was accomplished or learned.
+    /// If the voyage finishes in a single session, this is often the only
+    /// record needed (no bearing required).
     Complete {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
