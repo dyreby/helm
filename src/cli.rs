@@ -451,9 +451,19 @@ fn cmd_record(
             .collect::<Result<Vec<Observation>, String>>()?
     };
 
-    // Seal the bearing.
-    let sealed = bearing::record_bearing(observations, reading.to_string())
-        .map_err(|e| format!("failed to record bearing: {e}"))?;
+    // Store each observation as a separate artifact, collecting refs.
+    let mut observation_refs = Vec::with_capacity(observations.len());
+    for obs in &observations {
+        let id = storage
+            .store_observation(voyage.id, obs)
+            .map_err(|e| format!("failed to store observation: {e}"))?;
+        observation_refs.push(id);
+    }
+
+    // Seal the bearing with marks + refs (no inlined sightings).
+    let sealed =
+        bearing::record_bearing(&observations, observation_refs, reading.to_string())
+            .map_err(|e| format!("failed to record bearing: {e}"))?;
 
     // Write bearing to logbook.
     storage
@@ -869,8 +879,8 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
         match entry {
             LogbookEntry::Bearing(b) => {
                 println!("── Bearing {} ── {}", i + 1, b.taken_at);
-                for obs in &b.observations {
-                    match &obs.mark {
+                for mark in &b.marks {
+                    match mark {
                         Mark::Files { list, read } => {
                             println!("  Mark: Files");
                             for l in list {
