@@ -2,7 +2,7 @@
 //!
 //! Walks a Rust project tree, respects `.gitignore`, skips `target/`.
 //! Produces a full directory tree (listings) and reads documentation files (contents).
-//! Source code is not inspected — that's what `Files` is for on subsequent bearings.
+//! Source code is not read — that's what `Files` is for on subsequent bearings.
 
 use std::{
     collections::BTreeMap,
@@ -113,7 +113,7 @@ pub fn observe_rust_project(root: &Path) -> Sighting {
                 .push(dir_entry);
         }
 
-        // Inspect documentation files only.
+        // Read documentation files only.
         if !is_dir && is_doc_file(path, root) {
             let content = match fs::read(path) {
                 Ok(bytes) => match String::from_utf8(bytes) {
@@ -186,8 +186,8 @@ mod tests {
         } = observe_rust_project(dir.path());
 
         // Root should have src/, docs/, Cargo.toml, README.md, etc. but not target/.
-        let root_survey = listings.iter().find(|s| s.path == dir.path()).unwrap();
-        let names: Vec<&str> = root_survey
+        let root_listing = listings.iter().find(|s| s.path == dir.path()).unwrap();
+        let names: Vec<&str> = root_listing
             .entries
             .iter()
             .map(|e| e.name.as_str())
@@ -215,7 +215,7 @@ mod tests {
             })
             .collect();
 
-        // Docs are inspected.
+        // Docs are read.
         assert!(paths.contains(&"README.md".to_string()));
         assert!(paths.contains(&"VISION.md".to_string()));
         assert!(paths.contains(&"docs/design.md".to_string()));
@@ -249,11 +249,11 @@ mod tests {
         } = observe_rust_project(dir.path());
 
         // src/ directory should have its own listing.
-        let src_survey = listings
+        let src_listing = listings
             .iter()
             .find(|s| s.path == dir.path().join("src"))
             .unwrap();
-        let names: Vec<&str> = src_survey.entries.iter().map(|e| e.name.as_str()).collect();
+        let names: Vec<&str> = src_listing.entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"main.rs"));
         assert!(names.contains(&"lib.rs"));
     }
