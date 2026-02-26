@@ -14,7 +14,7 @@ mod voyage;
 use serde::{Deserialize, Serialize};
 
 pub use action::{ActionOutcome, ActionPlan, ActionReport, FileEdit, FileWrite};
-pub use bearing::{Bearing, BearingPlan};
+pub use bearing::{Bearing, ObservationPlan};
 pub use position::{Position, PositionAttempt, PositionSource};
 pub use source::{
     DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Moment, MomentRecord,

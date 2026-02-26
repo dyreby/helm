@@ -207,7 +207,7 @@ mod tests {
     fn sample_bearing() -> Bearing {
         Bearing {
             id: Uuid::new_v4(),
-            plan: BearingPlan {
+            plan: ObservationPlan {
                 sources: vec![SourceQuery::Files {
                     scope: vec![PathBuf::from("src/")],
                     focus: vec![],

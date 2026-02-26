@@ -1,16 +1,15 @@
 //! CLI interface for Helm.
 //!
-//! Designed for agents and humans to record voyages and bearings from the command line.
+//! Designed for agents and humans alike to record voyages and bearings from the command line.
 //! Each subcommand is non-interactive: arguments in, structured output out.
 //!
-//! The core bearing flow is two commands:
+//! Commands are organized by clarity:
 //!
-//! 1. `helm observe` — run a plan, output the moment (what was observed).
-//! 2. `helm record` — attach a position to a moment, seal the bearing.
+//! - `helm voyage` — lifecycle commands grouped under the domain concept.
+//! - `helm observe`, `helm record` — flat verbs, unambiguous on their own.
 //!
-//! `helm observe` writes the moment to a file (`--out`) or stdout.
-//! The caller decides how to handle it.
-//! `helm record` reads the moment back from a file (`--moment`) or stdin.
+//! Observing outputs a moment (what was seen) to stdout or a file.
+//! Recording attaches a position to a moment and writes the bearing to the logbook.
 
 use std::{fs, io, path::PathBuf};
 
@@ -21,9 +20,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::bearing::{observe_bearing, record_bearing};
+use crate::bearing;
 use crate::model::{
-    BearingPlan, LogbookEntry, MomentRecord, SourceQuery, Voyage, VoyageKind, VoyageStatus,
+    LogbookEntry, MomentRecord, ObservationPlan, SourceQuery, Voyage, VoyageKind, VoyageStatus,
 };
 use crate::storage::Storage;
 
@@ -37,20 +36,13 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Create a new voyage. Prints the voyage ID.
-    New {
-        /// What this voyage is about.
-        intent: String,
-
-        /// The kind of voyage.
-        #[arg(long, value_enum, default_value_t = VoyageKindArg::OpenWaters)]
-        kind: VoyageKindArg,
+    /// Manage voyages: units of work with intent and a logbook.
+    Voyage {
+        #[command(subcommand)]
+        command: VoyageCommand,
     },
 
-    /// List active voyages.
-    List,
-
-    /// Observe the world: run a plan and output what was seen.
+    /// Observe the world and output what was seen.
     ///
     /// Pure read, no side effects, repeatable.
     /// The moment is written as JSON to `--out` (if given) or stdout.
@@ -80,6 +72,22 @@ pub enum Command {
         #[arg(long)]
         moment: Option<PathBuf>,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum VoyageCommand {
+    /// Create a new voyage. Prints the voyage ID.
+    New {
+        /// What this voyage is about.
+        intent: String,
+
+        /// The kind of voyage.
+        #[arg(long, value_enum, default_value_t = VoyageKindArg::OpenWaters)]
+        kind: VoyageKindArg,
+    },
+
+    /// List active voyages.
+    List,
 
     /// Show a voyage's logbook: the trail of bearings and actions.
     ///
@@ -135,15 +143,17 @@ pub fn run(storage: &Storage) -> Result<(), String> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::New { intent, kind } => cmd_new(storage, &intent, &kind),
-        Command::List => cmd_list(storage),
+        Command::Voyage { command } => match command {
+            VoyageCommand::New { intent, kind } => cmd_new(storage, &intent, &kind),
+            VoyageCommand::List => cmd_list(storage),
+            VoyageCommand::Log { voyage } => cmd_log(storage, &voyage),
+        },
         Command::Observe { ref source, out } => cmd_observe(source, out),
         Command::Record {
             voyage,
             position,
             moment,
         } => cmd_record(storage, &voyage, &position, moment),
-        Command::Log { voyage } => cmd_log(storage, &voyage),
     }
 }
 
@@ -193,14 +203,14 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
 
 fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), String> {
     let plan = match source {
-        ObserveSource::RustProject { path } => BearingPlan {
+        ObserveSource::RustProject { path } => ObservationPlan {
             sources: vec![SourceQuery::RustProject { root: path.clone() }],
         },
         ObserveSource::Files { scope, focus } => {
             if scope.is_empty() && focus.is_empty() {
                 return Err("specify at least one --scope or --focus".to_string());
             }
-            BearingPlan {
+            ObservationPlan {
                 sources: vec![SourceQuery::Files {
                     scope: scope.clone(),
                     focus: focus.clone(),
@@ -209,7 +219,7 @@ fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), Strin
         }
     };
 
-    let moment_record = observe_bearing(&plan).map_err(|e| format!("observation failed: {e}"))?;
+    let moment_record = bearing::observe(&plan).map_err(|e| format!("observation failed: {e}"))?;
 
     // Serialize the observation output: plan + moment record together,
     // so `helm record` has everything it needs.
@@ -259,19 +269,19 @@ fn cmd_record(
         serde_json::from_str(&json).map_err(|e| format!("invalid moment JSON: {e}"))?;
 
     // Seal the bearing.
-    let bearing = record_bearing(output.plan, &output.moment_record, position.to_string())
+    let sealed = bearing::record_bearing(output.plan, &output.moment_record, position.to_string())
         .map_err(|e| format!("failed to record bearing: {e}"))?;
 
     // Write bearing to logbook and moment to moments file.
     storage
-        .append_entry(voyage.id, &LogbookEntry::Bearing(bearing.clone()))
+        .append_entry(voyage.id, &LogbookEntry::Bearing(sealed.clone()))
         .map_err(|e| format!("failed to save bearing: {e}"))?;
 
     storage
         .save_moment(voyage.id, &output.moment_record)
         .map_err(|e| format!("failed to save moment: {e}"))?;
 
-    let short_id = &bearing.id.to_string()[..8];
+    let short_id = &sealed.id.to_string()[..8];
     eprintln!(
         "Bearing {short_id} recorded for voyage {}",
         &voyage.id.to_string()[..8]
@@ -374,6 +384,6 @@ fn resolve_voyage(storage: &Storage, reference: &str) -> Result<Voyage, String> 
 /// to seal a bearing without re-observing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ObservationOutput {
-    plan: BearingPlan,
+    plan: ObservationPlan,
     moment_record: MomentRecord,
 }
