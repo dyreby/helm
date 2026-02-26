@@ -16,7 +16,7 @@ use crate::model::{Mark, Sighting};
 /// Pure observation — reads the world but never modifies it.
 pub fn observe(mark: &Mark) -> Sighting {
     match mark {
-        Mark::Files { scope, focus } => observe_files(scope, focus),
+        Mark::Files { list, read } => observe_files(list, read),
         Mark::RustProject { root } => observe_rust_project(root),
     }
 }

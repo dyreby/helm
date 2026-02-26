@@ -184,11 +184,11 @@ mod tests {
         Bearing {
             observations: vec![Observation {
                 mark: Mark::Files {
-                    scope: vec![PathBuf::from("src/")],
-                    focus: vec![],
+                    list: vec![PathBuf::from("src/")],
+                    read: vec![],
                 },
                 sighting: Sighting::Files {
-                    survey: vec![DirectorySurvey {
+                    listings: vec![DirectoryListing {
                         path: PathBuf::from("src/"),
                         entries: vec![DirectoryEntry {
                             name: "main.rs".into(),
@@ -196,7 +196,7 @@ mod tests {
                             size_bytes: Some(42),
                         }],
                     }],
-                    inspections: vec![],
+                    contents: vec![],
                 },
                 observed_at: Timestamp::now(),
             }],

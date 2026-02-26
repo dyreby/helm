@@ -32,11 +32,15 @@ pub struct Observation {
 pub enum Mark {
     /// Filesystem structure and content.
     ///
-    /// Scope: directories to survey (list contents with metadata).
-    /// Focus: specific files to inspect (read full contents).
+    /// Dumb and literal: no recursion, no filtering, no domain knowledge.
+    /// You tell it exactly what to list and read.
+    /// Domain marks like `RustProject` are where the smarts live.
+    ///
+    /// `list`: directories to list immediate contents of.
+    /// `read`: files to read.
     Files {
-        scope: Vec<PathBuf>,
-        focus: Vec<PathBuf>,
+        list: Vec<PathBuf>,
+        read: Vec<PathBuf>,
     },
 
     /// A Rust project rooted at a directory.
@@ -53,17 +57,17 @@ pub enum Mark {
 pub enum Sighting {
     /// Results from observing a filesystem mark.
     Files {
-        /// Directory listings from surveyed paths.
-        survey: Vec<DirectorySurvey>,
+        /// Directory listings from listed paths.
+        listings: Vec<DirectoryListing>,
 
-        /// File contents from focused paths.
-        inspections: Vec<FileInspection>,
+        /// File contents from read paths.
+        contents: Vec<FileContents>,
     },
 }
 
-/// A directory listing produced by surveying a path.
+/// A directory listing produced by listing a path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DirectorySurvey {
+pub struct DirectoryListing {
     pub path: PathBuf,
     pub entries: Vec<DirectoryEntry>,
 }
@@ -76,9 +80,9 @@ pub struct DirectoryEntry {
     pub size_bytes: Option<u64>,
 }
 
-/// The contents of a file produced by inspecting a path.
+/// The contents of a file produced by reading a path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileInspection {
+pub struct FileContents {
     pub path: PathBuf,
     pub content: FileContent,
 }

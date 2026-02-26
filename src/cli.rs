@@ -298,15 +298,15 @@ pub enum ObserveSource {
         path: PathBuf,
     },
 
-    /// Observe the filesystem: survey directories and inspect files.
+    /// Observe the filesystem: list directories and read files.
     Files {
-        /// Directories to survey (list contents with metadata).
+        /// Directories to list (immediate contents with metadata).
         #[arg(long)]
-        scope: Vec<PathBuf>,
+        list: Vec<PathBuf>,
 
-        /// Files to inspect (read full contents).
+        /// Files to read (full contents).
         #[arg(long)]
-        focus: Vec<PathBuf>,
+        read: Vec<PathBuf>,
     },
 }
 
@@ -383,13 +383,13 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
 fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), String> {
     let mark = match source {
         ObserveSource::RustProject { path } => Mark::RustProject { root: path.clone() },
-        ObserveSource::Files { scope, focus } => {
-            if scope.is_empty() && focus.is_empty() {
-                return Err("specify at least one --scope or --focus".to_string());
+        ObserveSource::Files { list, read } => {
+            if list.is_empty() && read.is_empty() {
+                return Err("specify at least one --list or --read".to_string());
             }
             Mark::Files {
-                scope: scope.clone(),
-                focus: focus.clone(),
+                list: list.clone(),
+                read: read.clone(),
             }
         }
     };
@@ -862,13 +862,13 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
                 println!("── Bearing {} ── {}", i + 1, b.taken_at);
                 for obs in &b.observations {
                     match &obs.mark {
-                        Mark::Files { scope, focus } => {
+                        Mark::Files { list, read } => {
                             println!("  Mark: Files");
-                            for s in scope {
-                                println!("    scope: {}", s.display());
+                            for l in list {
+                                println!("    list: {}", l.display());
                             }
-                            for f in focus {
-                                println!("    focus: {}", f.display());
+                            for r in read {
+                                println!("    read: {}", r.display());
                             }
                         }
                         Mark::RustProject { root } => {

@@ -21,8 +21,8 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
 | **Action** | Something that changed the world, recorded after the fact | `Action` |
 | **Act** | The specific thing that was done (push, create PR, comment) | `Act` |
-| **Scope** | What to survey — the broad view (directories, PRs) | Mark fields |
-| **Focus** | What to inspect — the deep view (specific files, diffs) | Mark fields |
+| **List** | Directories to list immediate contents of | `Mark::Files` field |
+| **Read** | Files to read full contents of | `Mark::Files` field |
 
 Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
 
@@ -77,8 +77,8 @@ The sighting contains the full directory tree and documentation file contents.
 
 Source code is not read. This is deliberate — `RustProject` is for orientation.
 It answers "what is this project and how is it structured?" not "what does the code do?"
-Once you know which files matter, use `Mark::Files` with focused paths to read them.
-Orient first, then focus. This two-step pattern — broad observation to get your bearings,
+Once you know which files matter, use `Mark::Files` with targeted paths to read them.
+Orient first, then target. This two-step pattern — broad observation to get your bearings,
 then targeted reads where it matters — is central to how Helm works.
 
 ### 3. Record a bearing
@@ -169,20 +169,24 @@ you know *what* was looked at without replaying the sighting.
 enum Mark {
     /// Filesystem structure and content.
     ///
-    /// Scope: directories to survey (list contents with metadata).
-    /// Focus: specific files to inspect (read full contents).
+    /// Dumb and literal: no recursion, no filtering, no domain knowledge.
+    /// You tell it exactly what to list and read.
+    /// Domain marks like `RustProject` are where the smarts live.
+    ///
+    /// `list`: directories to list immediate contents of.
+    /// `read`: files to read.
     Files {
-        scope: Vec<PathBuf>,
-        focus: Vec<PathBuf>,
+        list: Vec<PathBuf>,
+        read: Vec<PathBuf>,
     },
 
     /// A Rust project rooted at a directory.
     ///
-    /// Surveys the full tree (respects .gitignore, skips target/).
-    /// Inspects documentation files only — README, VISION, CONTRIBUTING,
+    /// Lists the full tree (respects .gitignore, skips target/).
+    /// Reads documentation files only — README, VISION, CONTRIBUTING,
     /// agent instructions, etc. Source code is not read.
     ///
-    /// This is an orientation mark. Use `Files` with focused paths
+    /// This is an orientation mark. Use `Files` with targeted paths
     /// to read specific source files on subsequent bearings.
     RustProject {
         root: PathBuf,
@@ -214,8 +218,8 @@ enum Mark {
 }
 ```
 
-`Files` separates scope (survey) from focus (inspect) as flat vectors.
-`RustProject` is a composite that does both — surveys the tree, inspects docs.
+`Files` separates list (directories) from read (files) as flat vectors.
+`RustProject` is a composite that does both — lists the tree, reads docs.
 
 ### Sighting
 
@@ -231,11 +235,11 @@ Mirrors `Mark`. One variant per domain, containing the raw data from observation
 enum Sighting {
     /// Results from observing a Files or RustProject mark.
     Files {
-        /// Directory listings from scope paths.
-        directories: Vec<DirectoryListing>,
+        /// Directory listings from listed paths.
+        listings: Vec<DirectoryListing>,
 
-        /// File contents from focus paths.
-        files: Vec<FileContents>,
+        /// File contents from read paths.
+        contents: Vec<FileContents>,
     },
 
     // ── Planned ──
@@ -288,19 +292,19 @@ A `RustProject` observation returns both:
 
 ```
 Sighting::Files {
-    directories: [
+    listings: [
         DirectoryListing { path: ".",    entries: [src/, Cargo.toml, README.md, ...] },
         DirectoryListing { path: "./src", entries: [main.rs, model.rs, ...] },
     ],
-    files: [
+    contents: [
         FileContents { path: "README.md",       content: Text { "# Helm\n..." } },
         FileContents { path: "CONTRIBUTING.md",  content: Text { "..." } },
     ],
 }
 ```
 
-`directories` has the full tree — every file appears here so you know it exists and how big it is.
-`files` has only documentation contents. Source files like `main.rs` show up in the listing but aren't read.
+`listings` has the full tree — every file appears here so you know it exists and how big it is.
+`contents` has only documentation contents. Source files like `main.rs` show up in the listing but aren't read.
 
 ### Bearing
 
@@ -498,16 +502,16 @@ enum VoyageStatus {
 Each mark describes a domain of observable reality — not a mechanism.
 Commands are how Helm fetches data; marks describe what Helm is looking at.
 
-| Kind | Survey (broad scan) | Inspect (deep dive) | Status |
-|------|--------------------|--------------------|--------|
-| **Files** | Directory trees with metadata | File contents | Implemented |
+| Kind | Broad scan | Deep dive | Status |
+|------|-----------|----------|--------|
+| **Files** | Directory listings with metadata | File contents | Implemented |
 | **RustProject** | Full project tree | Documentation files | Implemented |
 | **GitHub** | PR/issue metadata, check summaries | Diffs, comment bodies, threads | Planned |
 | **Context** | — | — | Planned |
 | **Web** | Status and headers | Response bodies | Future |
 | **Search** | Hit lists with locations | Matches with context | Future |
 
-Web-based kinds graduate to their own domain when their scope/focus semantics are rich enough.
+Web-based kinds graduate to their own domain when their observation semantics are rich enough.
 GitHub is the first domain that graduated.
 
 Whether Search is a peer kind or something that layers on top of other kinds is unresolved.
@@ -553,7 +557,7 @@ helm voyage list
 helm voyage log <id>
 helm voyage complete <id> [--summary <text>]
 
-helm observe files [--scope <dir>...] [--focus <file>...]
+helm observe files [--list <dir>...] [--read <file>...]
 helm observe rust-project <path>
 
 helm record <voyage-id> --reading <text> [--observation <file>...]
@@ -567,7 +571,7 @@ helm act <voyage-id> --as <identity> <act-subcommand>
 
 ## Open Questions
 
-- **Scope/focus modeling**: flat vectors work for Files.
+- **List/read modeling**: flat vectors work for Files.
   Will GitHub need a richer structure, or can it stay flat?
 - **Observation storage** (#49): bearings currently inline observations.
   Planned: store separately, prunable without breaking the narrative.
