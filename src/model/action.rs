@@ -23,7 +23,7 @@ pub struct Action {
     pub identity: String,
 
     /// What was done.
-    pub act: Act,
+    pub kind: ActionKind,
 
     /// When the action was performed.
     pub performed_at: Timestamp,
@@ -32,34 +32,37 @@ pub struct Action {
 /// What was done. Grouped by target, not by verb.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum Act {
+pub enum ActionKind {
     /// Pushed commits to a branch.
-    Pushed { branch: String, sha: String },
+    Push { branch: String, sha: String },
 
     /// An action on a pull request.
-    PullRequest { number: u64, act: PullRequestAct },
+    PullRequest {
+        number: u64,
+        action: PullRequestAction,
+    },
 
     /// An action on an issue.
-    Issue { number: u64, act: IssueAct },
+    Issue { number: u64, action: IssueAction },
 }
 
 /// Things you can do to a pull request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum PullRequestAct {
+pub enum PullRequestAction {
     /// Created a new pull request.
-    Created,
+    Create,
 
     /// Merged the pull request.
-    Merged,
+    Merge,
 
     /// Left a comment on the pull request.
-    Commented,
+    Comment,
 
     /// Replied to an inline review comment.
-    /// Distinct from `Commented` because "I addressed feedback"
+    /// Distinct from `Comment` because "I addressed feedback"
     /// is a meaningful signal when reading the logbook.
-    Replied,
+    Reply,
 
     /// Requested review from one or more users.
     RequestedReview { reviewers: Vec<String> },
@@ -68,13 +71,13 @@ pub enum PullRequestAct {
 /// Things you can do to an issue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum IssueAct {
+pub enum IssueAction {
     /// Created a new issue.
-    Created,
+    Create,
 
     /// Closed the issue.
-    Closed,
+    Close,
 
     /// Left a comment on the issue.
-    Commented,
+    Comment,
 }

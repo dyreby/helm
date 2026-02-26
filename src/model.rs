@@ -11,7 +11,7 @@ mod voyage;
 
 use serde::{Deserialize, Serialize};
 
-pub use action::{Act, Action, IssueAct, PullRequestAct};
+pub use action::{Action, ActionKind, IssueAction, PullRequestAction};
 pub use bearing::Bearing;
 pub use reading::Reading;
 pub use source::{

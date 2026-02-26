@@ -212,7 +212,7 @@ mod tests {
         Action {
             id: Uuid::new_v4(),
             identity: "john-agent".into(),
-            act: Act::Pushed {
+            kind: ActionKind::Push {
                 branch: "main".into(),
                 sha: "abc1234".into(),
             },

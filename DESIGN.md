@@ -20,7 +20,7 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Sighting** | The raw data returned when observing a mark | `Sighting` |
 | **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
 | **Action** | Something that changed the world, recorded after the fact | `Action` |
-| **Act** | The specific thing that was done (push, create PR, comment) | `Act` |
+| **Action kind** | The specific thing that was done (push, create PR, comment) | `ActionKind` |
 
 Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
 
@@ -397,7 +397,7 @@ struct Action {
     identity: String,
 
     /// What was done.
-    act: Act,
+    kind: ActionKind,
 
     performed_at: Timestamp,
 }
@@ -407,36 +407,36 @@ struct Action {
 /// This grouping is deliberate: "what happened to PR #42" is a more
 /// natural question than "what was commented on." The target is the
 /// primary key; the verb is secondary.
-enum Act {
+enum ActionKind {
     /// Pushed commits to a branch.
-    Pushed { branch: String, sha: String },
+    Push { branch: String, sha: String },
 
     /// An action on a pull request.
-    PullRequest { number: u64, act: PullRequestAct },
+    PullRequest { number: u64, action: PullRequestAction },
 
     /// An action on an issue.
-    Issue { number: u64, act: IssueAct },
+    Issue { number: u64, action: IssueAction },
 }
 
 /// Things you can do to a pull request.
-enum PullRequestAct {
-    Created,
-    Merged,
-    Commented,
+enum PullRequestAction {
+    Create,
+    Merge,
+    Comment,
 
     /// Replied to an inline review comment.
-    /// Distinct from Commented because "I addressed feedback"
+    /// Distinct from Comment because "I addressed feedback"
     /// is a meaningful signal when reading the logbook.
-    Replied,
+    Reply,
 
     RequestedReview { reviewers: Vec<String> },
 }
 
 /// Things you can do to an issue.
-enum IssueAct {
-    Created,
-    Closed,
-    Commented,
+enum IssueAction {
+    Create,
+    Close,
+    Comment,
 }
 ```
 
