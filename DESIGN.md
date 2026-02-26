@@ -505,12 +505,9 @@ Commands are how Helm fetches data; marks describe what Helm is looking at.
 - **GitHub** — PR/issue metadata, check summaries, diffs, comment bodies, threads. Planned.
 - **Context** — human-provided context with no system-observable source. Planned.
 - **Web** — status, headers, response bodies. Future.
-- **Search** — hit lists with locations, matches with context. Future.
 
 Web-based kinds graduate to their own domain when their observation semantics are rich enough.
 GitHub is the first domain that graduated.
-
-Whether Search is a peer kind or something that layers on top of other kinds is unresolved.
 
 ## The Agent Contract
 
@@ -573,4 +570,4 @@ helm act <voyage-id> --as <identity> <act-subcommand>
   Planned: store separately, prunable without breaking the narrative.
 - **Context mark**: structure TBD.
   Minimum viable: a description string and a reading.
-- **Search**: peer kind or cross-cutting layer?
+
