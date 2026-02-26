@@ -1,153 +1,131 @@
 # Vision
 
-Helm is how I want to work with a coding agent.
+Voyages give structure to observation, action, and recording.
+Each voyage is a unit of work with an intent, an append-only logbook, and an outcome.
 
 ## Why
 
-I'm working on a [collaboration framework](https://github.com/dyreby/collaboration-framework) that started as a way to work better with a coding agent and evolved into something broader about narrowing the gap between intent and understanding. The concepts work. The philosophy holds. But the mechanism I was using (prompt extensions injected into an agent's system prompt) kept producing friction in the wrong places. The agent forgot to load concepts, worked around tool constraints, expanded scope silently, and made decisions I should have been making.
+I'm working on a [collaboration framework](https://github.com/dyreby/collaboration-framework)
+for narrowing the gap between intent and understanding.
+The concepts work. The philosophy holds.
+But the mechanism I was using — prompt extensions injected into an agent's system prompt —
+kept producing friction in the wrong places.
+The agent forgot to load concepts, expanded scope silently,
+and made decisions I should have been making.
 
-The root cause isn't the agent or the prompts. It's the architecture: an autonomous agent with tools is the wrong shape for how I want to collaborate with an LLM. I want to steer. I want the agent to advise. I want nothing to move without me.
+The root cause isn't the agent or the prompts.
+It's the architecture: an autonomous agent with tools is the wrong shape
+for how I want to collaborate.
+I want to steer. I want the agent to advise. I want nothing to move without me.
 
-Helm is a companion to the collaboration framework. Where the framework captures how I think about collaboration generally, Helm is how I put that into practice at a terminal with a coding agent.
-
-## What
-
-Helm is a TUI (terminal user interface) written in Rust and inspired by, among other things, John Boyd's OODA loop, Michael Singer's practice of serving the moment unfolding in front of us, and my dad's love of sailing. It's a personal tool, deeply shaped by how I think, tuned to my preferred way of working with a computer, and not trying to be general.
-
-Helm delegates to external tools for specialized interaction and defines contracts for each (what context goes in, what artifact comes out). An LLM for generating positions, collaborating on plans, and drafting artifacts. An editor for reviewing and approving text before it leaves the system. Which tools fill those roles is a preference, not a dependency. I use [Helix](https://helix-editor.com/) and [pi](https://github.com/badlogic/pi-mono).
+Helm is where that happens.
+Where the framework captures how I think about collaboration,
+Helm is how I put it into practice at a terminal.
 
 ## Voyages
 
-A voyage is a unit of work with a destination. "Review PR #128." "Fix bug: Safari login." "Implement feature: RBAC." Each voyage has an intent, a logbook, and an outcome.
-
-When I launch Helm, I see my active voyages and can start a new one:
+"Resolve issue #42." "Review PR #128." "Investigate flaky CI."
+A voyage starts with intent, accumulates a logbook of bearings and actions, and ends with an outcome.
 
 ```
-Helm
+$ helm voyage new "Resolve #42: fix widget crash" --kind resolve-issue
+a3b0fc12
 
-Active Voyages:
-  1  Review PR #128       [Position]
-  2  Fix Bug: Safari       [Bearing]
-
-New Voyage:
-  Review PR
-  Investigate Issue
-  Implement Feature
-  Fix Bug
-  ...
+$ helm voyage list
+a3b0fc12  [active] [resolve-issue]  Resolve #42: fix widget crash
 ```
 
-Each voyage type frames the first bearing. "Review PR" knows to observe PR metadata. "Implement Feature" might observe the repo structure and relevant files. After that initial bearing, every voyage follows the same loop.
+Voyages are short by design.
+The ideal voyage is one session: start it, do the work, complete it.
+If you need to stop and come back, record a bearing so the next session has context.
 
-Voyages are short by design. The ideal voyage is one command, a few steps, and a clean exit. Over time, most should converge toward: take bearing, decide on action, confirm, done.
+## Bearings
 
-## The Core Loop
+A bearing captures the state of the world at a point in time:
+what was observed and what it means.
 
-Once inside a voyage, Helm presents actions in a menu that waits for me:
+Observations are the raw data — filesystem state, project structure, whatever the source kind produces.
+A position is a short statement about what the observations mean.
+Together they form an immutable record in the logbook.
 
-### Take Bearing
+```
+$ helm observe rust-project . --out obs.json
+$ helm record a3b "Null check missing in widget init path" --observation obs.json
+Bearing recorded for voyage a3b0fc12
+```
 
-Observe the world and orient. Everything that follows depends on what's here.
+Bearings exist for continuity.
+Record one when you'd need context if you stopped and came back in a new session.
+If a voyage finishes in one session, `helm voyage complete --summary` is often the only record needed.
 
-An observation points the spyglass at a subject and records what was seen as a sighting. Each subject is a domain of observable reality (Files, GitHub, Search, Web, etc.) with two levels of attention:
+## Actions
 
-- **Survey** — broad scan. Show the lay of the land. Directory listings, PR metadata, search hit lists, response headers.
-- **Inspect** — deepen selected items discovered by survey. Full file contents, complete diffs, comment thread bodies.
+An action is something that changed the world.
+Push a branch, open a PR, merge, comment, close an issue.
+Each action records what happened, who did it, and when.
 
-Survey always re-runs (fresh world read). Inspect targets are cumulative: I add and remove focus over successive observations without losing the survey context.
+```
+$ helm act a3b --as john-agent push --branch fix-widget --message "Fix null check"
+$ helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget"
+$ helm act a3b --as john-agent merge-pull-request 45
+```
 
-Take as many observations as you want. Each is self-contained: a subject, a sighting, a timestamp. Most are glances — quick looks that get discarded. Some are worth keeping.
+Actions execute real commands (git, GitHub CLI) and record the result.
+Failed operations are not recorded — the logbook captures what happened, not what was attempted.
 
-A bearing is sealed when you select the observations that matter and attach a position — your read on the state of the world. Observations you took but didn't find useful are simply not included.
-
-Position is a short, plain-text statement about the state of the world, generated by the agent from the full history of bearings in the voyage. A sentence or two, readable at a glance. It exists so that collaboration has a grounded starting point (the agent doesn't have to re-derive "what's going on" from raw evidence each time) and so the Logbook tells a readable story: scanning positions across bearings shows how the voyage unfolded without replaying raw sightings.
-
-Position defaults to a single generation. If it feels wrong, I can challenge it and the agent re-generates. But Position describes; it never prescribes.
-
-Bearings are deterministic given the same subjects and world state. Position is clearly labeled as agent-generated interpretation.
-
-Bearings exist for continuity. You take one when you'd need context if you had to stop and come back in a new session — the position captures where things stand so the next session doesn't start from scratch. If a voyage finishes in one session, the completion summary is often the only record needed.
-
-### Correct Position
-
-Refine the agent's read on the situation. Sometimes the position is wrong, or it misses something I know. I can challenge it, add context ("that CI failure is a flake"), or guide the agent toward a more accurate statement.
-
-This can involve conversation, editing, or both. The goal is a Position I trust before deciding what to do next.
-
-### Correct Course
-
-Decide what to do and shape how to do it. This is where collaboration happens: I talk with the agent about approach, review drafts, iterate on tone, make edits in Helix, ask the agent to refine what I wrote. Conversation and editing interleave in whatever order makes sense.
-
-The agent can see the current bearing and the history of all prior bearings (observations + positions), but never raw sightings from old observations. If it needs something from a prior scope, it must propose a new observation.
-
-This phase ends when I have either new subjects to observe (take another bearing) or an `ActionPlan` (ready to act). If the result is new subjects, Helm immediately takes those observations and returns to the menu with an updated bearing.
-
-Conversations during this phase are ephemeral. They may be persisted later for improvement purposes, but they are not required for correctness and are not part of the durable logbook.
-
-### Take Action
-
-Affect the world. This is the only phase where changes can't be taken back.
-
-An `ActionPlan` describes intent: post a review, open a PR, apply a patch, create or edit or delete files. Before execution, I approve through a gate:
-
-- **Helix** for text artifacts. The review body, PR description, or report opens in my editor. I read, edit if needed, and close to proceed.
-- **Yes/No prompt** for irreversible operations.
-
-The result is an `ActionReport`, which always contains the `ActionPlan` that produced it. No orphaned intents.
+Identity (`--as`) selects which GitHub account to use.
+Each identity has its own auth config under `~/.helm/gh-config/`.
 
 ## The Logbook
 
-A voyage's logbook is an append-only sequence of bearings and action reports.
+Append-only. Nothing is overwritten. Nothing is dropped.
+Bearings and actions interleave in the order they happened.
 
-Nothing is overwritten. Nothing is dropped. Each bearing is an immutable record of observations + position. Each action report is an immutable record of plan + outcome.
+```
+$ helm voyage log a3b
+Voyage: Resolve #42: fix widget crash
+Status: active
 
-Voyages can be paused and resumed. When I return, the world may have changed. I trigger a new bearing ("the world changed", "the world might have changed", or "I have new understanding"). Old bearings remain as history; the latest bearing is the active ground truth.
+── Bearing 1 ── 2026-02-26T15:05:12Z
+  Subject: RustProject @ .
+  Position: Null check missing in widget init path
 
-Logbook data lives locally on each machine. It is not committed to the repo, not synced across devices, and not shared with the agent beyond what's explicitly included in the current bearing.
+── Action 2 ── 2026-02-26T15:30:00Z
+  as: john-agent
+  pushed to fix-widget (abc1234)
+
+── Action 3 ── 2026-02-26T15:31:00Z
+  as: john-agent
+  created PR #45
+```
+
+Logbook data lives locally on the machine. Not committed, not synced, not shared.
 
 ## Source Kinds
 
-Each subject describes a domain of observable reality — not a mechanism. Commands are how Helm fetches data; subjects describe what Helm is looking at.
+Each source kind is a domain of observable reality — not a mechanism.
+Commands are how Helm fetches data; kinds describe what Helm is looking at.
 
-The starting set:
+The current set:
 
-- **Files** — filesystem structure and content. Survey returns directory trees with metadata. Inspect returns file contents.
-- **GitHub** — PRs, issues, checks, comments, repos. Survey returns metadata, file lists, check summaries. Inspect returns full diffs, comment bodies, thread details.
-- **Web** — any remote resource fetched over HTTP. Survey returns status and headers. Inspect returns response bodies.
-- **Search** — pattern matching across text sources. Survey returns file/location hit lists. Inspect returns matches with context.
+- **Files** — filesystem structure and content. Scope: directories to survey. Focus: specific files to inspect.
+- **Rust Project** — a Rust project rooted at a directory. Walks the tree, respects `.gitignore`, produces structure and source contents.
 
-Web-based kinds graduate to their own domain when their scope/focus semantics are rich enough to warrant it. GitHub is the first domain that graduated.
+Source kinds grow as Helm needs to see more of the world.
+GitHub, web resources, and search are natural next additions.
 
-### Open question: Search as a cross-cutting kind
+## CLI Shape
 
-Search naturally targets other kinds: you search *files*, or search *GitHub comments*. The other kinds are independent domains. Whether Search is a peer kind or something that layers on top of other kinds is unresolved. For now it's a peer, because it works and avoids premature abstraction.
+Every command is non-interactive: arguments in, structured output out.
+Commands compose with shell pipes, files, and scripts.
 
-## Scope and Focus
-
-Inside each subject, attention is described using two concepts:
-
-- **Scope** — collections to survey (directories, PRs, URLs)
-- **Focus** — specific items within scope to inspect
-
-Modeled as a map from scope targets to an optional set of focus items. No focus means survey-only. Focus means inspect those items (in addition to surveying the scope). A generic container keeps this consistent across kinds while allowing type-safe scope/focus per domain.
-
-Observations are always immutable. Survey produces a fresh sighting. Inspect adds focus items cumulatively; I can also unfocus items. Each change produces a new observation.
-
-## The Agent Contract
-
-The agent is stateless. Every call receives explicit context and returns a structured proposal. No ongoing session. No hidden memory.
-
-During **Take Bearing**, the agent receives the full history of bearings (observations + positions) and produces a Position string. Short, bounded, descriptive. It may reference historical trends if clearly relevant; otherwise it ignores history. Position describes; it never prescribes. I can challenge the position if it's wrong, and the agent re-generates.
-
-During **Correct Position**, the agent re-generates the Position based on my feedback while staying grounded in the current bearing.
-
-During **Correct Course**, the agent receives the current bearing, observation history, and constraints. It must return exactly one of: new subjects to observe, an `ActionPlan`, or an abort. The conversation is bounded by this requirement.
-
-The agent never executes tools. The agent never sees old sighting data from prior bearings. The agent never expands scope without my approval. These are structural constraints, not instructions.
+Helm doesn't own the interactive experience.
+[Bridge](https://github.com/dyreby/bridge) provides a TUI that drives Helm
+from a single interactive surface.
+Helm doesn't need to know Bridge exists —
+it serves whoever calls it, whether that's a human, an agent, Bridge, or a shell script.
 
 ## Key Concepts
-
-Names that drive the design.
 
 | Name | Role |
 |------|------|
@@ -155,26 +133,28 @@ Names that drive the design.
 | **Logbook** | Append-only voyage history |
 | **Bearing** | Immutable record: observations + position |
 | **Observation** | Self-contained: subject + sighting + timestamp |
-| **Subject** | What you pointed the spyglass at (a domain of observable reality) |
-| **Sighting** | What you saw when observing a subject |
-| **Position** | Short text statement of world state (agent-generated) |
-| **ActionPlan** | Intent to affect the world |
-| **ActionReport** | Outcome of action, contains its plan |
-| **Scope / Focus** | How a subject describes what to survey and what to inspect |
+| **Subject** | What you pointed the spyglass at |
+| **Sighting** | What you saw |
+| **Position** | Short statement of world state |
+| **Action** | Immutable record of something that changed the world |
+| **Act** | What was done (push, create PR, merge, etc.) |
+| **Source Kind** | A domain of observable reality |
 
 ## Design Principles
 
-- **Subjects describe what to observe, not how to observe it.** Kinds are domains of reality. Commands are implementation.
-- **Observations are always fresh.** Survey re-runs every time. No stale catalog reuse.
-- **The agent proposes; Helm enforces; I approve.** Authority without autonomy.
-- **Immutable history, append-only log.** Nothing is overwritten or dropped.
-- **Old sightings are never reused by the agent.** If it needs past data, it proposes a new observation.
-- **Voyages are local.** No syncing, no shared state, no committed artifacts.
-- **Bring your own tools.** Helm orchestrates; external tools do the specialized work. The editor, the conversational agent, and future integrations are all pluggable.
-- **Joy matters.** This is a daily tool. The language, the flow, and the rhythm should feel intentional and calm.
+- **Non-interactive.** Every command takes arguments and produces output. No menus, no prompts, no sessions.
+- **Composable.** Output is structured (JSON). Commands pipe and chain. Scripts and agents are first-class callers.
+- **Append-only.** The logbook is a trail, not a workspace. Nothing is overwritten.
+- **Caller-agnostic.** Helm doesn't know who's driving. The approval gate lives upstream.
+- **Local.** Voyages and logbooks live on the machine. No syncing, no shared state.
+- **Joy matters.** This is a daily tool. The language and the rhythm should feel intentional.
+
+## Inspirations
+
+John Boyd's OODA loop. Michael Singer's practice of serving the moment unfolding in front of us.
+My dad's love of sailing.
 
 ## What This Document Is Not
 
-- **Not an implementation plan.** The types and flows described here are the conceptual architecture. Implementation will emerge through building Helm with Helm.
-- **Not a general framework.** Helm is shaped by how I think, and it will evolve as I do. If any of it is useful to you along the way, that's wonderful.
-- **Not an autonomous agent.** The agent never drives. It advises within hard constraints. The helm waits for me.
+- **Not an implementation plan.** The concepts here are the architecture. Implementation emerges through building.
+- **Not a general framework.** Helm is shaped by how I think. If any of it is useful to you, that's wonderful.
