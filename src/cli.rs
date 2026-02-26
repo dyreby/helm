@@ -48,7 +48,8 @@ Stopping mid-voyage? Record a bearing so the next session has context:
   helm record a3b --reading "Halfway through, refactoring widget module" --observation obs.json
 
 Record actions that change the world:
-  helm act a3b --as john-agent push --branch fix-widget --sha abc1234
+  helm act a3b --as john-agent commit --message "Fix null check in widget init"
+  helm act a3b --as john-agent push --branch fix-widget
   helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget"
   helm act a3b --as john-agent merge-pull-request 45
 
@@ -128,15 +129,21 @@ pub enum Command {
 /// Act subcommands — one per kind of action.
 #[derive(Debug, Subcommand)]
 pub enum ActCommand {
+    /// Commit staged changes.
+    ///
+    /// Commits whatever is currently staged.
+    /// Records the resulting commit SHA in the logbook.
+    Commit {
+        /// Commit message.
+        #[arg(long)]
+        message: String,
+    },
+
     /// Push commits to a branch.
     Push {
         /// Branch name.
         #[arg(long)]
         branch: String,
-
-        /// Commit message for the push.
-        #[arg(long)]
-        message: Option<String>,
     },
 
     /// Create a pull request.
@@ -478,7 +485,7 @@ fn cmd_act(
     }
 
     let gh_config = gh_config_dir(identity)?;
-    let act = execute_act(act_cmd, &gh_config)?;
+    let act = act(act_cmd, &gh_config)?;
 
     let action = Action {
         id: Uuid::new_v4(),
@@ -518,44 +525,49 @@ fn gh_config_dir(identity: &str) -> Result<PathBuf, String> {
     Ok(config_dir)
 }
 
-/// Execute the act and return the structured `ActionKind` on success.
-fn execute_act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<ActionKind, String> {
+/// Dispatch the act command and return the structured `ActionKind` on success.
+fn act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<ActionKind, String> {
     match act_cmd {
-        ActCommand::Push { branch, message } => execute_push(branch, message.as_deref()),
+        ActCommand::Commit { message } => commit(message),
+        ActCommand::Push { branch } => push(branch),
         ActCommand::CreatePullRequest {
             branch,
             title,
             body,
             base,
             reviewer,
-        } => execute_create_pr(gh_config, branch, title, body.as_deref(), base, reviewer),
-        ActCommand::MergePullRequest { number } => execute_merge_pr(gh_config, *number),
+        } => create_pr(gh_config, branch, title, body.as_deref(), base, reviewer),
+        ActCommand::MergePullRequest { number } => merge_pr(gh_config, *number),
         ActCommand::CommentOnPullRequest { number, body } => {
-            execute_comment_pr(gh_config, *number, body)
+            comment_pr(gh_config, *number, body)
         }
         ActCommand::ReplyOnPullRequest {
             number,
             comment_id,
             body,
-        } => execute_reply_pr(gh_config, *number, *comment_id, body),
+        } => reply_pr(gh_config, *number, *comment_id, body),
         ActCommand::RequestReview { number, reviewer } => {
-            execute_request_review(gh_config, *number, reviewer)
+            request_review(gh_config, *number, reviewer)
         }
         ActCommand::CreateIssue { title, body } => {
-            execute_create_issue(gh_config, title, body.as_deref())
+            create_issue(gh_config, title, body.as_deref())
         }
-        ActCommand::CloseIssue { number } => execute_close_issue(gh_config, *number),
+        ActCommand::CloseIssue { number } => close_issue(gh_config, *number),
         ActCommand::CommentOnIssue { number, body } => {
-            execute_comment_issue(gh_config, *number, body)
+            comment_issue(gh_config, *number, body)
         }
     }
 }
 
-fn execute_push(branch: &str, message: Option<&str>) -> Result<ActionKind, String> {
-    if let Some(msg) = message {
-        run_cmd("git", &["add", "-A"], None)?;
-        run_cmd("git", &["commit", "-m", msg], None)?;
-    }
+fn commit(message: &str) -> Result<ActionKind, String> {
+    run_cmd("git", &["commit", "-m", message], None)?;
+
+    let sha = run_cmd_output("git", &["rev-parse", "HEAD"], None)?;
+
+    Ok(ActionKind::Commit { sha })
+}
+
+fn push(branch: &str) -> Result<ActionKind, String> {
     run_cmd("git", &["push", "origin", branch], None)?;
 
     let sha = run_cmd_output("git", &["rev-parse", "HEAD"], None)?;
@@ -566,7 +578,7 @@ fn execute_push(branch: &str, message: Option<&str>) -> Result<ActionKind, Strin
     })
 }
 
-fn execute_create_pr(
+fn create_pr(
     gh_config: &PathBuf,
     branch: &str,
     title: &str,
@@ -593,7 +605,7 @@ fn execute_create_pr(
     })
 }
 
-fn execute_merge_pr(gh_config: &PathBuf, number: u64) -> Result<ActionKind, String> {
+fn merge_pr(gh_config: &PathBuf, number: u64) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd(
         "gh",
@@ -607,7 +619,7 @@ fn execute_merge_pr(gh_config: &PathBuf, number: u64) -> Result<ActionKind, Stri
     })
 }
 
-fn execute_comment_pr(gh_config: &PathBuf, number: u64, body: &str) -> Result<ActionKind, String> {
+fn comment_pr(gh_config: &PathBuf, number: u64, body: &str) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd(
         "gh",
@@ -621,7 +633,7 @@ fn execute_comment_pr(gh_config: &PathBuf, number: u64, body: &str) -> Result<Ac
     })
 }
 
-fn execute_reply_pr(
+fn reply_pr(
     gh_config: &PathBuf,
     number: u64,
     comment_id: u64,
@@ -651,7 +663,7 @@ fn execute_reply_pr(
     })
 }
 
-fn execute_request_review(
+fn request_review(
     gh_config: &PathBuf,
     number: u64,
     reviewers: &[String],
@@ -673,7 +685,7 @@ fn execute_request_review(
     })
 }
 
-fn execute_create_issue(
+fn create_issue(
     gh_config: &PathBuf,
     title: &str,
     body: Option<&str>,
@@ -692,7 +704,7 @@ fn execute_create_issue(
     })
 }
 
-fn execute_close_issue(gh_config: &PathBuf, number: u64) -> Result<ActionKind, String> {
+fn close_issue(gh_config: &PathBuf, number: u64) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd("gh", &["issue", "close", &num_str], Some(gh_config))?;
 
@@ -702,7 +714,7 @@ fn execute_close_issue(gh_config: &PathBuf, number: u64) -> Result<ActionKind, S
     })
 }
 
-fn execute_comment_issue(
+fn comment_issue(
     gh_config: &PathBuf,
     number: u64,
     body: &str,
@@ -808,6 +820,9 @@ fn parse_issue_number_from_url(url: &str) -> Result<u64, String> {
 /// Format an act for human-readable display.
 fn format_act(act: &ActionKind) -> String {
     match act {
+        ActionKind::Commit { sha } => {
+            format!("committed ({sha})")
+        }
         ActionKind::Push { branch, sha } => {
             format!("pushed to {branch} ({sha})")
         }
@@ -971,6 +986,14 @@ mod tests {
     fn parse_issue_number_from_github_url() {
         let url = "https://github.com/dyreby/helm/issues/12";
         assert_eq!(parse_issue_number_from_url(url).unwrap(), 12);
+    }
+
+    #[test]
+    fn format_commit_action_kind() {
+        let kind = ActionKind::Commit {
+            sha: "abc1234".to_string(),
+        };
+        assert_eq!(format_act(&kind), "committed (abc1234)");
     }
 
     #[test]
