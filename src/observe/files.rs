@@ -344,14 +344,14 @@ mod tests {
     // ── observe() dispatch test ──
 
     #[test]
-    fn observe_dispatches_files_subject() {
+    fn observe_dispatches_files_mark() {
         let dir = setup_test_dir();
-        let subject = crate::model::Subject::Files {
+        let mark = crate::model::Mark::Files {
             scope: vec![dir.path().to_path_buf()],
             focus: vec![dir.path().join("hello.txt")],
         };
 
-        let sighting = crate::observe::observe(&subject);
+        let sighting = crate::observe::observe(&mark);
         assert!(matches!(sighting, Sighting::Files { .. }));
     }
 }

@@ -1,11 +1,11 @@
 //! Core data model for Helm.
 //!
 //! These types represent the conceptual architecture:
-//! voyages, bearings, observations, sightings, positions, and actions.
+//! voyages, bearings, observations, sightings, readings, and actions.
 
 mod action;
 mod bearing;
-mod position;
+mod reading;
 mod source;
 mod voyage;
 
@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 
 pub use action::{Act, Action, IssueAct, PullRequestAct};
 pub use bearing::Bearing;
-pub use position::Position;
+pub use reading::Reading;
 pub use source::{
-    DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Observation, Sighting, Subject,
+    DirectoryEntry, DirectorySurvey, FileContent, FileInspection, Mark, Observation, Sighting,
 };
 pub use voyage::{Voyage, VoyageKind, VoyageStatus};
 

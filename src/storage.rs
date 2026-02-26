@@ -183,7 +183,7 @@ mod tests {
     fn sample_bearing() -> Bearing {
         Bearing {
             observations: vec![Observation {
-                subject: Subject::Files {
+                mark: Mark::Files {
                     scope: vec![PathBuf::from("src/")],
                     focus: vec![],
                 },
@@ -200,7 +200,7 @@ mod tests {
                 },
                 observed_at: Timestamp::now(),
             }],
-            position: Position {
+            reading: Reading {
                 text: "The project has a single main.rs file.".into(),
                 history: vec![],
             },
