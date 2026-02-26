@@ -2,9 +2,9 @@
 
 A personal, Rust-based CLI for disciplined collaboration with a coding agent.
 
-You steer, the agent advises, nothing moves without you. The helm waits for you.
+You steer, the agent advises, nothing moves without you. The helm awaits. ⎈
 
-Inspired by John Boyd's OODA loop, Michael Singer's practice of serving the moment unfolding in front of us, and my dad's love of sailing.
+Inspired in part by John Boyd's OODA loop, Michael Singer's practice of serving the moment unfolding in front of us, and my dad's love of sailing.
 
 Built around [dyreby/collaboration-framework](https://github.com/dyreby/collaboration-framework), which started as a way to work better with a coding agent and evolved into something more general. Helm picks up where that project's extension-based approach ran into friction — replacing prompt engineering with structured, artifact-driven workflows.
 
