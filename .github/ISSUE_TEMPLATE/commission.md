@@ -1,6 +1,6 @@
 ---
 name: Commission
-description: Commission a fleet to get work done
+about: Commission a fleet to get work done
 labels: ["commission"]
 ---
 
