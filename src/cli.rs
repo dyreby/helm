@@ -49,7 +49,7 @@ Stopping mid-voyage? Record a bearing so the next session has context:
 
 Record actions that change the world:
   helm act a3b --as john-agent push --branch fix-widget --sha abc1234
-  helm act a3b --as john-agent create-pull-request 45
+  helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget"
   helm act a3b --as john-agent merge-pull-request 45
 
 Check on voyages:
