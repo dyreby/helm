@@ -26,7 +26,7 @@ To create one, use the [commission template](https://github.com/dyreby/helm/issu
 
 A **voyage** is tracked through the helm CLI.
 To start work on a mission, create a `resolve-issue` voyage for it.
-The voyage records the journey — bearings taken, positions formed, actions executed — as an append-only logbook.
+The voyage records the journey — bearings taken, actions acted — as an append-only logbook.
 
 #### Voyage Types
 

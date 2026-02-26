@@ -1,6 +1,6 @@
 # Helm
 
-A personal, Rust-based TUI for disciplined collaboration with a coding agent.
+A personal, Rust-based CLI for disciplined collaboration with a coding agent.
 
 You steer, the agent advises, nothing moves without you.
 

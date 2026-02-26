@@ -9,8 +9,8 @@
 //! - `helm observe`, `helm record` — flat verbs, unambiguous on their own.
 //! - `helm act` — record an action that changed the world.
 //!
-//! Observing outputs an observation (subject + sighting) to stdout or a file.
-//! Recording selects observations, attaches a position, and writes the bearing to the logbook.
+//! Observing outputs an observation (mark + sighting) to stdout or a file.
+//! Recording selects observations, attaches a reading, and writes the bearing to the logbook.
 //! Acting executes git/GitHub operations and records them in the logbook.
 
 use std::path::PathBuf;
@@ -24,7 +24,7 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::model::{
-    Act, Action, IssueAct, LogbookEntry, Observation, PullRequestAct, Subject, Voyage, VoyageKind,
+    Act, Action, IssueAct, LogbookEntry, Mark, Observation, PullRequestAct, Voyage, VoyageKind,
     VoyageStatus,
 };
 use crate::{bearing, storage::Storage};
@@ -45,7 +45,7 @@ const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
 
 Stopping mid-voyage? Record a bearing so the next session has context:
   helm observe rust-project . --out obs.json
-  helm record a3b "Halfway through, refactoring widget module" --observation obs.json
+  helm record a3b --reading "Halfway through, refactoring widget module" --observation obs.json
 
 Record actions that change the world:
   helm act a3b --as john-agent push --branch fix-widget --sha abc1234
@@ -78,10 +78,10 @@ pub enum Command {
         out: Option<PathBuf>,
     },
 
-    /// Record a bearing: attach a position to one or more observations.
+    /// Record a bearing: attach a reading to one or more observations.
     ///
     /// Reads observations from `--observation` files or stdin (single observation),
-    /// attaches the position, and writes the bearing to the logbook.
+    /// attaches the reading, and writes the bearing to the logbook.
     ///
     /// Bearings exist for continuity, not just documentation.
     /// Record one when you'd need context if you had to stop and come back
@@ -91,8 +91,9 @@ pub enum Command {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
 
-        /// Your read on the state of the world.
-        position: String,
+        /// Your reading of the observed mark.
+        #[arg(long)]
+        reading: String,
 
         /// Paths to observation JSON files (from `helm observe --out`).
         /// Pass multiple times for multi-observation bearings.
@@ -246,9 +247,9 @@ pub enum VoyageCommand {
 
     /// Show a voyage's logbook: the trail of bearings and actions.
     ///
-    /// Displays observations and positions for each bearing,
+    /// Displays observations and readings for each bearing,
     /// and identity/act for each action.
-    /// The logbook tells the story through positions and actions.
+    /// The logbook tells the story through readings and actions.
     Log {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
         voyage: String,
@@ -325,9 +326,9 @@ pub fn run(storage: &Storage) -> Result<(), String> {
         Command::Observe { ref source, out } => cmd_observe(source, out),
         Command::Record {
             voyage,
-            position,
+            reading,
             observation,
-        } => cmd_record(storage, &voyage, &position, &observation),
+        } => cmd_record(storage, &voyage, &reading, &observation),
         Command::Act {
             voyage,
             identity,
@@ -380,20 +381,20 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
 }
 
 fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), String> {
-    let subject = match source {
-        ObserveSource::RustProject { path } => Subject::RustProject { root: path.clone() },
+    let mark = match source {
+        ObserveSource::RustProject { path } => Mark::RustProject { root: path.clone() },
         ObserveSource::Files { scope, focus } => {
             if scope.is_empty() && focus.is_empty() {
                 return Err("specify at least one --scope or --focus".to_string());
             }
-            Subject::Files {
+            Mark::Files {
                 scope: scope.clone(),
                 focus: focus.clone(),
             }
         }
     };
 
-    let observation = bearing::observe(&subject);
+    let observation = bearing::observe(&mark);
 
     let json = serde_json::to_string_pretty(&observation)
         .map_err(|e| format!("failed to serialize observation: {e}"))?;
@@ -415,7 +416,7 @@ fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), Strin
 fn cmd_record(
     storage: &Storage,
     voyage_ref: &str,
-    position: &str,
+    reading: &str,
     observation_paths: &[PathBuf],
 ) -> Result<(), String> {
     let voyage = resolve_voyage(storage, voyage_ref)?;
@@ -444,7 +445,7 @@ fn cmd_record(
     };
 
     // Seal the bearing.
-    let sealed = bearing::record_bearing(observations, position.to_string())
+    let sealed = bearing::record_bearing(observations, reading.to_string())
         .map_err(|e| format!("failed to record bearing: {e}"))?;
 
     // Write bearing to logbook.
@@ -456,7 +457,7 @@ fn cmd_record(
         "Bearing recorded for voyage {}",
         &voyage.id.to_string()[..8]
     );
-    eprintln!("Position: {position}");
+    eprintln!("Reading: {reading}");
 
     Ok(())
 }
@@ -860,9 +861,9 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
             LogbookEntry::Bearing(b) => {
                 println!("── Bearing {} ── {}", i + 1, b.taken_at);
                 for obs in &b.observations {
-                    match &obs.subject {
-                        Subject::Files { scope, focus } => {
-                            println!("  Subject: Files");
+                    match &obs.mark {
+                        Mark::Files { scope, focus } => {
+                            println!("  Mark: Files");
                             for s in scope {
                                 println!("    scope: {}", s.display());
                             }
@@ -870,12 +871,12 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
                                 println!("    focus: {}", f.display());
                             }
                         }
-                        Subject::RustProject { root } => {
-                            println!("  Subject: RustProject @ {}", root.display());
+                        Mark::RustProject { root } => {
+                            println!("  Mark: RustProject @ {}", root.display());
                         }
                     }
                 }
-                println!("  Position: {}", b.position.text);
+                println!("  Reading: {}", b.reading.text);
                 println!();
             }
             LogbookEntry::Action(a) => {

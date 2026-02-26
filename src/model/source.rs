@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Observation {
     /// What was observed.
-    pub subject: Subject,
+    pub mark: Mark,
 
     /// What was seen.
     pub sighting: Sighting,
@@ -22,14 +22,14 @@ pub struct Observation {
     pub observed_at: Timestamp,
 }
 
-/// The subject of an observation: what you pointed the spyglass at.
+/// The mark of an observation: what you pointed the spyglass at.
 ///
 /// Each variant describes a domain-specific scope.
 /// Adding a new source kind means adding a variant here
 /// and implementing its observation logic.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum Subject {
+pub enum Mark {
     /// Filesystem structure and content.
     ///
     /// Scope: directories to survey (list contents with metadata).
@@ -47,11 +47,11 @@ pub enum Subject {
     RustProject { root: PathBuf },
 }
 
-/// What was seen when observing a subject.
+/// What was seen when observing a mark.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Sighting {
-    /// Results from observing a filesystem subject.
+    /// Results from observing a filesystem mark.
     Files {
         /// Directory listings from surveyed paths.
         survey: Vec<DirectorySurvey>,
