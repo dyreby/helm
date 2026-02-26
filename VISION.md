@@ -41,7 +41,7 @@ Source kinds grow as Helm needs to see more of the world.
 - **Caller-agnostic.** Helm serves whoever calls it — human, agent, TUI, or script.
 - **Append-only.** The logbook is a trail, not a workspace.
 - **Local.** No syncing, no shared state.
-- **Joy matters.** Naming and language shape how a tool feels to use. I find the nautical theme helpful and fun here. ⛵️
+- **Joy matters.** Language shapes how a tool feels to use. I find the nautical theme helpful and fun here. ⛵️
 
 ## Inspirations
 
