@@ -309,7 +309,10 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
     println!("Created: {}", voyage.created_at);
     match &voyage.status {
         VoyageStatus::Active => println!("Status: active"),
-        VoyageStatus::Completed { completed_at, summary } => {
+        VoyageStatus::Completed {
+            completed_at,
+            summary,
+        } => {
             println!("Status: completed ({completed_at})");
             if let Some(s) = summary {
                 println!("Summary: {s}");
