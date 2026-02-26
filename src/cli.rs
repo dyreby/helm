@@ -461,9 +461,8 @@ fn cmd_record(
     }
 
     // Seal the bearing with marks + refs (no inlined sightings).
-    let sealed =
-        bearing::record_bearing(&observations, observation_refs, reading.to_string())
-            .map_err(|e| format!("failed to record bearing: {e}"))?;
+    let sealed = bearing::record_bearing(&observations, observation_refs, reading.to_string())
+        .map_err(|e| format!("failed to record bearing: {e}"))?;
 
     // Write bearing to logbook.
     storage

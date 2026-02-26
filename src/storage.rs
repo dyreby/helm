@@ -156,11 +156,7 @@ impl Storage {
     /// `observations/` directory. Returns the assigned ID.
     ///
     /// IDs are linear integers scoped to the voyage: `1.json`, `2.json`, etc.
-    pub fn store_observation(
-        &self,
-        voyage_id: Uuid,
-        observation: &Observation,
-    ) -> Result<u64> {
+    pub fn store_observation(&self, voyage_id: Uuid, observation: &Observation) -> Result<u64> {
         let dir = self.voyage_dir(voyage_id);
         if !dir.exists() {
             return Err(StorageError::VoyageNotFound(voyage_id));
@@ -453,9 +449,7 @@ mod tests {
     fn store_observation_nonexistent_voyage_fails() {
         let (_dir, storage) = test_storage();
         let obs = sample_observation();
-        let err = storage
-            .store_observation(Uuid::new_v4(), &obs)
-            .unwrap_err();
+        let err = storage.store_observation(Uuid::new_v4(), &obs).unwrap_err();
 
         assert!(matches!(err, StorageError::VoyageNotFound(_)));
     }
