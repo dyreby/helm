@@ -36,8 +36,8 @@ pub enum Mark {
     /// No recursion, filtering, or domain awareness.
     /// Domain-specific marks like `RustProject` add that intelligence.
     ///
-    /// `list`: directories to list immediate contents of.
-    /// `read`: files to read.
+    /// - `list`: directories to list immediate contents of.
+    /// - `read`: files to read.
     Files {
         list: Vec<PathBuf>,
         read: Vec<PathBuf>,
