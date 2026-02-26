@@ -30,7 +30,8 @@ Each mark describes a domain of observable reality — not a mechanism. Commands
 
 - **Non-interactive.** Arguments in, output out. Commands compose with pipes, files, and scripts.
 - **Caller-agnostic.** Helm serves whoever calls it — human, agent, or script.
-- **Trust the voyage.** The logbook is a trail, not a workspace. The record is always yours to review.
+- **Permanent record.** What's recorded stays recorded.
+- **Trust the voyage.** The record is always yours to review.
 - **Bring your own tools.** Helm orchestrates; external tools do the specialized work.
 - **Joy matters.** Language shapes how a tool feels to use. The nautical theme is helpful and fun. ⛵️
 
