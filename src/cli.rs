@@ -24,8 +24,8 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::model::{
-    Act, Action, IssueAct, LogbookEntry, Mark, Observation, PullRequestAct, Voyage, VoyageKind,
-    VoyageStatus,
+    Action, ActionKind, IssueAction, LogbookEntry, Mark, Observation, PullRequestAction, Voyage,
+    VoyageKind, VoyageStatus,
 };
 use crate::{bearing, storage::Storage};
 
@@ -483,7 +483,7 @@ fn cmd_act(
     let action = Action {
         id: Uuid::new_v4(),
         identity: identity.to_string(),
-        act,
+        kind: act,
         performed_at: Timestamp::now(),
     };
 
@@ -494,7 +494,7 @@ fn cmd_act(
     let short_id = &voyage.id.to_string()[..8];
     eprintln!("Action recorded for voyage {short_id}");
     eprintln!("  as: {identity}");
-    eprintln!("  {}", format_act(&action.act));
+    eprintln!("  {}", format_act(&action.kind));
 
     Ok(())
 }
@@ -518,8 +518,8 @@ fn gh_config_dir(identity: &str) -> Result<PathBuf, String> {
     Ok(config_dir)
 }
 
-/// Execute the act and return the structured `Act` on success.
-fn execute_act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<Act, String> {
+/// Execute the act and return the structured `ActionKind` on success.
+fn execute_act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<ActionKind, String> {
     match act_cmd {
         ActCommand::Push { branch, message } => execute_push(branch, message.as_deref()),
         ActCommand::CreatePullRequest {
@@ -551,7 +551,7 @@ fn execute_act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<Act, String>
     }
 }
 
-fn execute_push(branch: &str, message: Option<&str>) -> Result<Act, String> {
+fn execute_push(branch: &str, message: Option<&str>) -> Result<ActionKind, String> {
     if let Some(msg) = message {
         run_cmd("git", &["add", "-A"], None)?;
         run_cmd("git", &["commit", "-m", msg], None)?;
@@ -560,7 +560,7 @@ fn execute_push(branch: &str, message: Option<&str>) -> Result<Act, String> {
 
     let sha = run_cmd_output("git", &["rev-parse", "HEAD"], None)?;
 
-    Ok(Act::Pushed {
+    Ok(ActionKind::Push {
         branch: branch.to_string(),
         sha,
     })
@@ -573,7 +573,7 @@ fn execute_create_pr(
     body: Option<&str>,
     base: &str,
     reviewers: &[String],
-) -> Result<Act, String> {
+) -> Result<ActionKind, String> {
     let mut args = vec![
         "pr", "create", "--head", branch, "--base", base, "--title", title,
     ];
@@ -587,13 +587,13 @@ fn execute_create_pr(
     let output = run_cmd_output("gh", &args, Some(gh_config))?;
     let number = parse_pr_number_from_url(&output)?;
 
-    Ok(Act::PullRequest {
+    Ok(ActionKind::PullRequest {
         number,
-        act: PullRequestAct::Created,
+        action: PullRequestAction::Create,
     })
 }
 
-fn execute_merge_pr(gh_config: &PathBuf, number: u64) -> Result<Act, String> {
+fn execute_merge_pr(gh_config: &PathBuf, number: u64) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd(
         "gh",
@@ -601,13 +601,13 @@ fn execute_merge_pr(gh_config: &PathBuf, number: u64) -> Result<Act, String> {
         Some(gh_config),
     )?;
 
-    Ok(Act::PullRequest {
+    Ok(ActionKind::PullRequest {
         number,
-        act: PullRequestAct::Merged,
+        action: PullRequestAction::Merge,
     })
 }
 
-fn execute_comment_pr(gh_config: &PathBuf, number: u64, body: &str) -> Result<Act, String> {
+fn execute_comment_pr(gh_config: &PathBuf, number: u64, body: &str) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd(
         "gh",
@@ -615,9 +615,9 @@ fn execute_comment_pr(gh_config: &PathBuf, number: u64, body: &str) -> Result<Ac
         Some(gh_config),
     )?;
 
-    Ok(Act::PullRequest {
+    Ok(ActionKind::PullRequest {
         number,
-        act: PullRequestAct::Commented,
+        action: PullRequestAction::Comment,
     })
 }
 
@@ -626,7 +626,7 @@ fn execute_reply_pr(
     number: u64,
     comment_id: u64,
     body: &str,
-) -> Result<Act, String> {
+) -> Result<ActionKind, String> {
     let repo = detect_repo()?;
     let endpoint = format!("repos/{repo}/pulls/{number}/comments");
     let in_reply_to = comment_id.to_string();
@@ -645,9 +645,9 @@ fn execute_reply_pr(
         Some(gh_config),
     )?;
 
-    Ok(Act::PullRequest {
+    Ok(ActionKind::PullRequest {
         number,
-        act: PullRequestAct::Replied,
+        action: PullRequestAction::Reply,
     })
 }
 
@@ -655,7 +655,7 @@ fn execute_request_review(
     gh_config: &PathBuf,
     number: u64,
     reviewers: &[String],
-) -> Result<Act, String> {
+) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     for r in reviewers {
         run_cmd(
@@ -665,9 +665,9 @@ fn execute_request_review(
         )?;
     }
 
-    Ok(Act::PullRequest {
+    Ok(ActionKind::PullRequest {
         number,
-        act: PullRequestAct::RequestedReview {
+        action: PullRequestAction::RequestedReview {
             reviewers: reviewers.to_vec(),
         },
     })
@@ -677,7 +677,7 @@ fn execute_create_issue(
     gh_config: &PathBuf,
     title: &str,
     body: Option<&str>,
-) -> Result<Act, String> {
+) -> Result<ActionKind, String> {
     let mut args = vec!["issue", "create", "--title", title];
     if let Some(b) = body {
         args.extend(["--body", b]);
@@ -686,23 +686,27 @@ fn execute_create_issue(
     let output = run_cmd_output("gh", &args, Some(gh_config))?;
     let number = parse_issue_number_from_url(&output)?;
 
-    Ok(Act::Issue {
+    Ok(ActionKind::Issue {
         number,
-        act: IssueAct::Created,
+        action: IssueAction::Create,
     })
 }
 
-fn execute_close_issue(gh_config: &PathBuf, number: u64) -> Result<Act, String> {
+fn execute_close_issue(gh_config: &PathBuf, number: u64) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd("gh", &["issue", "close", &num_str], Some(gh_config))?;
 
-    Ok(Act::Issue {
+    Ok(ActionKind::Issue {
         number,
-        act: IssueAct::Closed,
+        action: IssueAction::Close,
     })
 }
 
-fn execute_comment_issue(gh_config: &PathBuf, number: u64, body: &str) -> Result<Act, String> {
+fn execute_comment_issue(
+    gh_config: &PathBuf,
+    number: u64,
+    body: &str,
+) -> Result<ActionKind, String> {
     let num_str = number.to_string();
     run_cmd(
         "gh",
@@ -710,9 +714,9 @@ fn execute_comment_issue(gh_config: &PathBuf, number: u64, body: &str) -> Result
         Some(gh_config),
     )?;
 
-    Ok(Act::Issue {
+    Ok(ActionKind::Issue {
         number,
-        act: IssueAct::Commented,
+        action: IssueAction::Comment,
     })
 }
 
@@ -802,26 +806,26 @@ fn parse_issue_number_from_url(url: &str) -> Result<u64, String> {
 }
 
 /// Format an act for human-readable display.
-fn format_act(act: &Act) -> String {
+fn format_act(act: &ActionKind) -> String {
     match act {
-        Act::Pushed { branch, sha } => {
+        ActionKind::Push { branch, sha } => {
             format!("pushed to {branch} ({sha})")
         }
-        Act::PullRequest { number, act } => {
-            let verb = match act {
-                PullRequestAct::Created => "created",
-                PullRequestAct::Merged => "merged",
-                PullRequestAct::Commented => "commented on",
-                PullRequestAct::Replied => "replied on",
-                PullRequestAct::RequestedReview { .. } => "requested review on",
+        ActionKind::PullRequest { number, action } => {
+            let verb = match action {
+                PullRequestAction::Create => "created",
+                PullRequestAction::Merge => "merged",
+                PullRequestAction::Comment => "commented on",
+                PullRequestAction::Reply => "replied on",
+                PullRequestAction::RequestedReview { .. } => "requested review on",
             };
             format!("{verb} PR #{number}")
         }
-        Act::Issue { number, act } => {
-            let verb = match act {
-                IssueAct::Created => "created",
-                IssueAct::Closed => "closed",
-                IssueAct::Commented => "commented on",
+        ActionKind::Issue { number, action } => {
+            let verb = match action {
+                IssueAction::Create => "created",
+                IssueAction::Close => "closed",
+                IssueAction::Comment => "commented on",
             };
             format!("{verb} issue #{number}")
         }
@@ -882,7 +886,7 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
             LogbookEntry::Action(a) => {
                 println!("── Action {} ── {}", i + 1, a.performed_at);
                 println!("  as: {}", a.identity);
-                println!("  {}", format_act(&a.act));
+                println!("  {}", format_act(&a.kind));
                 println!();
             }
         }
@@ -970,50 +974,50 @@ mod tests {
     }
 
     #[test]
-    fn format_pushed_act() {
-        let act = Act::Pushed {
+    fn format_push_action_kind() {
+        let kind = ActionKind::Push {
             branch: "main".to_string(),
             sha: "abc1234".to_string(),
         };
-        assert_eq!(format_act(&act), "pushed to main (abc1234)");
+        assert_eq!(format_act(&kind), "pushed to main (abc1234)");
     }
 
     #[test]
-    fn format_pr_acts() {
+    fn format_pr_action_kinds() {
         let cases = [
-            (PullRequestAct::Created, "created PR #10"),
-            (PullRequestAct::Merged, "merged PR #10"),
-            (PullRequestAct::Commented, "commented on PR #10"),
-            (PullRequestAct::Replied, "replied on PR #10"),
+            (PullRequestAction::Create, "created PR #10"),
+            (PullRequestAction::Merge, "merged PR #10"),
+            (PullRequestAction::Comment, "commented on PR #10"),
+            (PullRequestAction::Reply, "replied on PR #10"),
             (
-                PullRequestAct::RequestedReview {
+                PullRequestAction::RequestedReview {
                     reviewers: vec!["alice".to_string()],
                 },
                 "requested review on PR #10",
             ),
         ];
-        for (pr_act, expected) in cases {
-            let act = Act::PullRequest {
+        for (pr_action, expected) in cases {
+            let kind = ActionKind::PullRequest {
                 number: 10,
-                act: pr_act,
+                action: pr_action,
             };
-            assert_eq!(format_act(&act), expected);
+            assert_eq!(format_act(&kind), expected);
         }
     }
 
     #[test]
-    fn format_issue_acts() {
+    fn format_issue_action_kinds() {
         let cases = [
-            (IssueAct::Created, "created issue #5"),
-            (IssueAct::Closed, "closed issue #5"),
-            (IssueAct::Commented, "commented on issue #5"),
+            (IssueAction::Create, "created issue #5"),
+            (IssueAction::Close, "closed issue #5"),
+            (IssueAction::Comment, "commented on issue #5"),
         ];
-        for (issue_act, expected) in cases {
-            let act = Act::Issue {
+        for (issue_action, expected) in cases {
+            let kind = ActionKind::Issue {
                 number: 5,
-                act: issue_act,
+                action: issue_action,
             };
-            assert_eq!(format_act(&act), expected);
+            assert_eq!(format_act(&kind), expected);
         }
     }
 }
