@@ -65,7 +65,7 @@ Produces an `Observation`:
 ```
 {
   mark: Mark::RustProject { root: "." },
-  sighting: Sighting::Files { directories: [...], files: [...] },
+  sighting: Sighting::Files { listings: [...], contents: [...] },
   observed_at: "2026-02-26T17:00:00Z"
 }
 ```
