@@ -21,8 +21,6 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
 | **Action** | Something that changed the world, recorded after the fact | `Action` |
 | **Act** | The specific thing that was done (push, create PR, comment) | `Act` |
-| **List** | Directories to list immediate contents of | `Mark::Files` field |
-| **Read** | Files to read full contents of | `Mark::Files` field |
 
 Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
 
@@ -502,8 +500,8 @@ enum VoyageStatus {
 Each mark describes a domain of observable reality — not a mechanism.
 Commands are how Helm fetches data; marks describe what Helm is looking at.
 
-| Kind | Broad scan | Deep dive | Status |
-|------|-----------|----------|--------|
+| Kind | Structure | Content | Status |
+|------|----------|---------|--------|
 | **Files** | Directory listings with metadata | File contents | Implemented |
 | **RustProject** | Full project tree | Documentation files | Implemented |
 | **GitHub** | PR/issue metadata, check summaries | Diffs, comment bodies, threads | Planned |
