@@ -3,6 +3,8 @@
 //! `ObserveTarget` is the extension surface for new observation types.
 //! Both `helm observe` and `helm slate erase` accept an `ObserveTarget`,
 //! so adding a new observable type extends both commands for free.
+//!
+//! See [ADR 002](../../docs/adr/002-slate.md) for the rationale.
 
 use std::path::PathBuf;
 
@@ -13,8 +15,7 @@ use crate::model::PullRequestFocus;
 /// What helm can observe.
 ///
 /// Each variant is a subcommand accepted by `helm observe` and `helm slate erase`.
-/// Adding a new observation type means adding a variant here — both commands
-/// extend automatically.
+/// Adding a new observation type means adding a variant here — both commands extend automatically.
 #[derive(Debug, Subcommand)]
 pub enum ObserveTarget {
     /// Read specific files.

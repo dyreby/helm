@@ -25,9 +25,9 @@ pub fn observe(target: &Observe, gh_config_dir: Option<&Path>) -> Observation {
 
 /// Seal the slate into a bearing.
 ///
-/// Deduplicates by target, keeping the newest observation when the same
-/// target was observed multiple times. Chronological order is preserved
-/// in the output.
+/// Deduplicates by target, keeping the newest observation when the same target was observed
+/// multiple times.
+/// Chronological order is preserved in the output.
 ///
 /// TODO: large payloads should spill to the hold (deferred — hold storage not yet implemented).
 pub fn seal(observations: Vec<Observation>, summary: String) -> Bearing {

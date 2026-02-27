@@ -1,7 +1,7 @@
 //! Steer execution: running intent-based actions that mutate collaborative state.
 //!
-//! Each steer action maps to one or more `gh` CLI calls. Authentication uses
-//! the caller's identity via `GH_CONFIG_DIR`.
+//! Each steer action maps to one or more `gh` CLI calls.
+//! Authentication uses the caller's identity via `GH_CONFIG_DIR`.
 
 use std::{path::Path, process::Command};
 

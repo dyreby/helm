@@ -8,10 +8,7 @@ use crate::{
     storage::Storage,
 };
 
-use super::{
-    format::format_pr_focus,
-    target::ObserveTarget,
-};
+use super::{format::format_pr_focus, target::ObserveTarget};
 
 pub(super) fn cmd_observe(
     storage: &Storage,
@@ -52,9 +49,7 @@ pub(super) fn cmd_observe(
             },
             true,
         ),
-        ObserveTarget::GitHubIssue { number } => {
-            (Observe::GitHubIssue { number: *number }, true)
-        }
+        ObserveTarget::GitHubIssue { number } => (Observe::GitHubIssue { number: *number }, true),
         ObserveTarget::GitHubRepository => (Observe::GitHubRepository, true),
     };
 
