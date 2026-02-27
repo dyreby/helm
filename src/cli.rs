@@ -49,6 +49,10 @@ const WORKFLOW_HELP: &str = r#"Workflow: advancing an issue
   3. helm steer --voyage a3b --as dyreby --summary "Plan looks good" comment --issue 42 --body "Here's my plan: ..."
   4. helm voyage end --voyage a3b --status "Merged PR #45"
 
+Identity (--as):
+  --as is optional when identity is configured elsewhere.
+  Resolution order: --as flag → HELM_IDENTITY env var → ~/.helm/config.toml
+
 Observe:
   helm observe --voyage a3b --as dyreby file-contents --read src/widget.rs
   helm observe --voyage a3b --as dyreby github-pr 42 --focus full
