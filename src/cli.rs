@@ -272,7 +272,7 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             out,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
-            cmd_observe(&voyage, identity.as_deref(), source, out)
+            cmd_observe(storage, &voyage, identity.as_deref(), source, out)
         }
         Command::Steer {
             voyage,
@@ -334,6 +334,7 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
 }
 
 fn cmd_observe(
+    storage: &Storage,
     voyage: &Voyage,
     identity: Option<&str>,
     source: &ObserveSource,
@@ -387,6 +388,10 @@ fn cmd_observe(
     let json = serde_json::to_string_pretty(&observation)
         .map_err(|e| format!("failed to serialize observation: {e}"))?;
 
+    storage
+        .append_working(voyage.id, &observation)
+        .map_err(|e| format!("failed to append to working set: {e}"))?;
+
     match out {
         Some(path) => {
             fs::write(&path, &json)
@@ -398,9 +403,6 @@ fn cmd_observe(
             println!("{json}");
         }
     }
-
-    // TODO(#99): append observation to voyage's working set here.
-    let _ = voyage;
 
     Ok(())
 }
