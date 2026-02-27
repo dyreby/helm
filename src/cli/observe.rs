@@ -4,11 +4,10 @@ use std::{fs, path::PathBuf};
 
 use crate::{
     bearing,
+    identity,
     model::{Observe, Voyage},
     storage::Storage,
 };
-
-use crate::identity;
 
 use super::{format::format_pr_focus, target::ObserveTarget};
 

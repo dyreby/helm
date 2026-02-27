@@ -77,11 +77,11 @@ fn read_config_identity(path: &Path) -> Result<Option<String>, String> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::path::PathBuf;
 
     use tempfile::TempDir;
-
-    use super::*;
 
     fn write_config(dir: &TempDir, contents: &str) -> PathBuf {
         let path = dir.path().join("config.toml");
