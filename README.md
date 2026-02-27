@@ -6,9 +6,9 @@ Helm observes the world, acts upon it, and records everything in an append-only 
 Three commands — **observe**, **steer**, **log** — and one invariant: only steer and log write to the logbook.
 
 ```
-helm observe issue 42          # look at something, add to the working set
-helm steer comment --issue 42  # act on collaborative state, seal and log
-helm log waiting               # record a state, seal and log
+helm observe issue 42        # look at something, add to the working set
+helm steer comment 42 "..."  # act on collaborative state, seal and log
+helm log waiting              # record a state, seal and log
 ```
 
 Work is organized into **voyages** — units of work, each with its own logbook.
