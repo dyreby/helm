@@ -154,7 +154,9 @@ mod tests {
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
-        storage.append_working(voyage.id, &sample_observation()).unwrap();
+        storage
+            .append_working(voyage.id, &sample_observation())
+            .unwrap();
         storage.clear_working(voyage.id).unwrap();
 
         let working_path = dir
