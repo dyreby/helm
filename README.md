@@ -7,9 +7,9 @@ Three commands (**observe**, **steer**, **log**) and one invariant: only steer a
 
 ```
 helm voyage new "Fix widget crash"                                              # → a3b0fc12
-helm observe --voyage a3b --as john github-issue 42                             # add to working set
-helm steer --voyage a3b --as john --summary "Plan" comment --issue 42 --body "here's my plan"
-helm log --voyage a3b --as john --summary "Waiting for review" "blocked"        # seal and record
+helm observe --voyage a3b --as dyreby github-issue 42                           # add to working set
+helm steer --voyage a3b --as dyreby --summary "Plan" comment --issue 42 --body "here's my plan"
+helm log --voyage a3b --as dyreby --summary "Waiting for review" "blocked"      # seal and record
 helm voyage end --voyage a3b --status "Merged PR #45"
 ```
 
