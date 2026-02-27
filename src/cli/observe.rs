@@ -17,39 +17,33 @@ pub(super) fn cmd_observe(
     target: &ObserveTarget,
     out: Option<PathBuf>,
 ) -> Result<(), String> {
-    let (observe, needs_gh) = match target {
+    let observe = match target {
         ObserveTarget::FileContents { read } => {
             if read.is_empty() {
                 return Err("specify at least one --read".to_string());
             }
-            (
-                Observe::FileContents {
-                    paths: read.clone(),
-                },
-                false,
-            )
+            Observe::FileContents {
+                paths: read.clone(),
+            }
         }
         ObserveTarget::DirectoryTree {
             root,
             skip,
             max_depth,
-        } => (
-            Observe::DirectoryTree {
-                root: root.clone(),
-                skip: skip.clone(),
-                max_depth: *max_depth,
-            },
-            false,
-        ),
-        ObserveTarget::RustProject { path } => (Observe::RustProject { root: path.clone() }, false),
+        } => Observe::DirectoryTree {
+            root: root.clone(),
+            skip: skip.clone(),
+            max_depth: *max_depth,
+        },
+        ObserveTarget::RustProject { path } => Observe::RustProject { root: path.clone() },
         ObserveTarget::GitHubPullRequest { number } => {
-            (Observe::GitHubPullRequest { number: *number }, true)
+            Observe::GitHubPullRequest { number: *number }
         }
-        ObserveTarget::GitHubIssue { number } => (Observe::GitHubIssue { number: *number }, true),
-        ObserveTarget::GitHubRepository => (Observe::GitHubRepository, true),
+        ObserveTarget::GitHubIssue { number } => Observe::GitHubIssue { number: *number },
+        ObserveTarget::GitHubRepository => Observe::GitHubRepository,
     };
 
-    let gh_config = if needs_gh {
+    let gh_config = if observe.needs_gh() {
         let id = identity::resolve_identity(identity)?;
         Some(super::gh_config_dir(&id)?)
     } else {

@@ -47,3 +47,13 @@ pub enum Observe {
     /// Always fetches open issues and pull requests.
     GitHubRepository,
 }
+
+impl Observe {
+    /// Returns `true` if this observation requires GitHub credentials.
+    pub fn needs_gh(&self) -> bool {
+        matches!(
+            self,
+            Self::GitHubIssue { .. } | Self::GitHubPullRequest { .. } | Self::GitHubRepository
+        )
+    }
+}
