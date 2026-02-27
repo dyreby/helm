@@ -12,6 +12,24 @@ cargo test
 
 Fix any issues before pushing. Don't rely on CI to catch what you can catch locally.
 
+## GitHub CLI Usage
+
+When creating PRs or posting issue comments with `gh`, write anything beyond a sentence or two to a temp file and pass it via `--body-file`:
+
+```bash
+body=$(mktemp)
+cat > "$body" <<'EOF'
+Your multi-line body here.
+
+Can include `backticks`, "quotes", and newlines without escaping.
+EOF
+
+gh pr create --title "..." --body-file "$body"
+gh issue comment 123 --body-file "$body"
+```
+
+Inline `--body` strings don't render `\n` as newlines, and the shell interprets backticks inside them. `--body-file` avoids both problems.
+
 ## How Work Is Organized
 
 Work in this project follows a nautical metaphor that mirrors the tool itself.
