@@ -1,4 +1,4 @@
-//! Local persistence for voyages, logbooks, and the working set.
+//! Local persistence for voyages, logbooks, and the slate.
 //!
 //! Each voyage lives in its own directory under the storage root:
 //!
@@ -6,7 +6,7 @@
 //! <root>/<uuid>/
 //!   voyage.json    # Voyage metadata
 //!   logbook.jsonl  # Append-only logbook entries (bearings + steer/log records)
-//!   working.jsonl  # Observations since last steer/log, cleared on seal
+//!   slate.jsonl    # Observations since last steer/log, cleared on seal
 //! ```
 
 use std::{fs, io, path::PathBuf};
@@ -14,8 +14,8 @@ use std::{fs, io, path::PathBuf};
 use uuid::Uuid;
 
 mod logbook;
+mod slate;
 mod voyage;
-mod working;
 
 /// Errors that can occur during storage operations.
 #[derive(Debug, thiserror::Error)]

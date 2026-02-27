@@ -1,27 +1,27 @@
 //! Steer execution: running intent-based actions that mutate collaborative state.
 //!
-//! Each steer action maps to one or more `gh` CLI calls. Authentication uses
-//! the caller's identity via `GH_CONFIG_DIR`.
+//! Each steer action maps to one or more `gh` CLI calls.
+//! Authentication uses the caller's identity via `GH_CONFIG_DIR`.
 
 use std::{path::Path, process::Command};
 
 use crate::model::{CommentTarget, Steer};
 
-/// Execute a steer action.
+/// Perform a steer action.
 ///
 /// Returns `Ok(())` on success, or an error message describing what failed.
-pub fn execute(steer: &Steer, gh_config: &Path) -> Result<(), String> {
+pub fn perform(steer: &Steer, gh_config: &Path) -> Result<(), String> {
     match steer {
         Steer::Comment {
             number,
             body,
             target,
-        } => execute_comment(*number, body, target, gh_config),
+        } => perform_comment(*number, body, target, gh_config),
         _ => Err("this steer action is not yet implemented".to_string()),
     }
 }
 
-fn execute_comment(
+fn perform_comment(
     number: u64,
     body: &str,
     target: &CommentTarget,

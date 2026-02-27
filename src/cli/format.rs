@@ -2,7 +2,7 @@
 
 use crate::model::PullRequestFocus;
 
-pub(super) fn format_pr_focus(focus: &PullRequestFocus) -> &'static str {
+pub(crate) fn format_pr_focus(focus: &PullRequestFocus) -> &'static str {
     match focus {
         PullRequestFocus::Summary => "summary",
         PullRequestFocus::Full => "full",
