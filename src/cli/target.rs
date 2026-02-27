@@ -4,7 +4,7 @@
 //! Both `helm observe` and `helm slate erase` accept an `ObserveTarget`,
 //! so adding a new observable type extends both commands for free.
 //!
-//! See [ADR 002](../../docs/adr/002-slate.md) for the rationale.
+//! See ADR 002 for the rationale.
 
 use std::path::PathBuf;
 
