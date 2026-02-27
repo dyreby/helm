@@ -21,9 +21,3 @@ labels: ["commission"]
 ## Notes
 
 <!-- Context, decisions, things considered but excluded. Optional but useful. -->
-
-## Starting a session
-
-<!-- A one-liner for picking up work on this commission. -->
-
-> Check the commission (#), see what's next, and start a voyage for it.
