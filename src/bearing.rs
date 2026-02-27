@@ -6,6 +6,10 @@
 //!    Each observation captures a mark and its sighting.
 //! 2. **Record** — select the observations that matter,
 //!    attach a reading, and seal the bearing.
+//!
+//! Observations are stored as separate artifacts.
+//! The bearing records marks and observation references — lightweight,
+//! always in the logbook.
 
 use crate::model::{Bearing, Mark, Observation, Reading};
 
@@ -25,10 +29,12 @@ pub fn observe(mark: &Mark) -> Observation {
 
 /// Assemble a bearing from observations and a reading.
 ///
-/// Call this after taking one or more observations.
-/// The bearing seals the selected observations with your interpretation of the world.
+/// Extracts marks from the observations and pairs them with
+/// the given observation references (storage IDs).
+/// The observations themselves are stored separately by the caller.
 pub fn record_bearing(
-    observations: Vec<Observation>,
+    observations: &[Observation],
+    observation_refs: Vec<u64>,
     reading_text: String,
 ) -> Result<Bearing, &'static str> {
     if observations.is_empty() {
@@ -39,8 +45,11 @@ pub fn record_bearing(
         return Err("reading text cannot be empty");
     }
 
+    let marks: Vec<Mark> = observations.iter().map(|o| o.mark.clone()).collect();
+
     Ok(Bearing {
-        observations,
+        marks,
+        observation_refs,
         reading: Reading {
             text: reading_text,
             history: Vec::new(),
@@ -80,9 +89,11 @@ mod tests {
         }
 
         // Step 2: record with reading.
-        let bearing = record_bearing(vec![observation], "One test file.".to_string()).unwrap();
+        let bearing =
+            record_bearing(&[observation], vec![1], "One test file.".to_string()).unwrap();
         assert_eq!(bearing.reading.text, "One test file.");
-        assert_eq!(bearing.observations.len(), 1);
+        assert_eq!(bearing.marks.len(), 1);
+        assert_eq!(bearing.observation_refs, vec![1]);
     }
 
     #[test]
@@ -102,17 +113,19 @@ mod tests {
         });
 
         let bearing = record_bearing(
-            vec![obs1, obs2],
+            &[obs1, obs2],
+            vec![1, 2],
             "Directory has two files, inspected one.".to_string(),
         )
         .unwrap();
 
-        assert_eq!(bearing.observations.len(), 2);
+        assert_eq!(bearing.marks.len(), 2);
+        assert_eq!(bearing.observation_refs, vec![1, 2]);
     }
 
     #[test]
     fn rejects_empty_observations() {
-        let err = record_bearing(vec![], "Some reading.".to_string()).unwrap_err();
+        let err = record_bearing(&[], vec![], "Some reading.".to_string()).unwrap_err();
         assert_eq!(err, "bearing must include at least one observation");
     }
 
@@ -124,7 +137,7 @@ mod tests {
             read: vec![],
         });
 
-        let err = record_bearing(vec![observation], "  ".to_string()).unwrap_err();
+        let err = record_bearing(&[observation], vec![1], "  ".to_string()).unwrap_err();
         assert_eq!(err, "reading text cannot be empty");
     }
 
@@ -144,7 +157,9 @@ mod tests {
             read: vec![dir.path().join("a.txt")],
         });
 
-        let bearing = record_bearing(vec![keep], "Only the survey matters.".to_string()).unwrap();
-        assert_eq!(bearing.observations.len(), 1);
+        let bearing =
+            record_bearing(&[keep], vec![1], "Only the survey matters.".to_string()).unwrap();
+        assert_eq!(bearing.marks.len(), 1);
+        assert_eq!(bearing.observation_refs, vec![1]);
     }
 }

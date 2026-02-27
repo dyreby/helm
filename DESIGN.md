@@ -324,14 +324,15 @@ Sighting::Files {
 /// Identified by position in the logbook stream, not by ID.
 struct Bearing {
     marks: Vec<Mark>,
+    observation_refs: Vec<u64>,
     reading: Reading,
     taken_at: Timestamp,
 }
 ```
 
-> **Note:** The current implementation stores `observations: Vec<Observation>`,
-> inlining full sightings. The intended design separates them — bearings reference
-> marks, observations are stored as separate prunable artifacts. See #49.
+Marks are extracted from observations at record time, so the bearing is
+self-describing — you see what was looked at without resolving refs.
+`observation_refs` are voyage-scoped integer IDs pointing to files in `observations/`.
 
 ### Observation
 
@@ -547,12 +548,18 @@ If it feels wrong, the human challenges it and the agent re-generates.
     <uuid>/
       voyage.json       # Voyage metadata
       logbook.jsonl     # Append-only logbook entries
+      observations/     # Prunable observation artifacts
+        1.json          # Observation referenced by bearing
+        2.json
   gh-config/
     <identity>/         # Per-identity gh auth
 ```
 
-Observations are currently inlined in bearings.
-See #49 for the planned separation into prunable artifacts.
+Observations are stored as separate JSON files, one per observation.
+IDs are linear integers scoped to the voyage.
+Bearings reference observations by ID — deleting an observation file
+doesn't break the logbook's narrative.
+Pruning is manual: delete files from `observations/`.
 
 ## CLI
 
@@ -578,8 +585,6 @@ helm act <voyage-id> --as <identity> <act-subcommand>
 
 - **List/read modeling**: flat vectors work for Files.
   Will GitHub need a richer structure, or can it stay flat?
-- **Observation storage** (#49): bearings currently inline observations.
-  Planned: store separately, prunable without breaking the narrative.
 - **Context mark**: structure TBD.
   Minimum viable: a description string and a reading.
 
