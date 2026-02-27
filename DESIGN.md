@@ -34,7 +34,7 @@ Only `steer` and `log` write to the logbook. That's the invariant.
 | Noun | Verb | Example |
 |------|------|---------|
 | **Observation** | observe | "Observe an issue" — look at it, capture what came back |
-| **Bearing** | seal | "Seal a bearing" — collapse the working set of observations at decision time |
+| **Bearing** | seal | "Seal a bearing" — seal the working set into a bearing at decision time |
 | **Voyage** | start / end | "Start a voyage" / "End a voyage" |
 
 The logbook **records** — that's its job, not the caller's verb. You observe, steer, and log. The logbook captures what happened.
