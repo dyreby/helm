@@ -4,195 +4,197 @@ The current design for Helm. Serves [VISION.md](VISION.md). The vision serves [C
 
 If this design changes, that's growth — the vision held, and we learned something.
 
-This document is where design decisions are proposed, discussed, and recorded.
+Design decisions are recorded as ADRs in [docs/adr/](docs/adr/).
 
 ## Terminology
 
 The nautical metaphor is load-bearing. These terms are used consistently across code, CLI, and docs.
 
-| Term | What it means | Rust type |
-|------|---------------|-----------|
-| **Voyage** | A unit of work with intent, logbook, and outcome | `Voyage` |
-| **Logbook** | Append-only record of a voyage's bearings and actions | `Vec<LogbookEntry>` |
-| **Bearing** | What was looked at and what it meant — mark + reading | `Bearing` |
-| **Observation** | What was looked at and what was seen — mark + sighting | `Observation` |
-| **Mark** | What you pointed the spyglass at — a domain of observable reality | `Mark` |
-| **Sighting** | The raw data returned when observing a mark | `Sighting` |
-| **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
-| **Action** | An operation Helm performed | `Action` |
-| **Action kind** | The specific thing that was done (push, create PR, comment) | `ActionKind` |
+| Term | What it means |
+|------|---------------|
+| **Voyage** | A unit of work with a logbook |
+| **Logbook** | Append-only record of a voyage's bearings and actions |
+| **Observation** | What you looked at (`Observe` variant) + what came back (payload) + timestamp |
+| **Bearing** | Curated observations + summary. Sealed into a log entry on steer/log |
+| **Working set** | Observations accumulating between steer/log commands |
+| **The hold** | Per-voyage content-addressed storage for large payloads |
+
+### Commands
+
+| Command | What it does | Writes to logbook? |
+|---------|-------------|-------------------|
+| **`helm observe`** | Gather observations into the working set | No |
+| **`helm steer`** | Mutate collaborative state | Yes |
+| **`helm log`** | Record state without mutation | Yes |
+
+Only `steer` and `log` write to the logbook. That's the invariant.
 
 ### Canonical Verbs
 
-Verbs pair with nouns consistently across code, CLI, and docs.
-
 | Noun | Verb | Example |
 |------|------|---------|
-| **Mark** | observe | "Observe a mark" — look at it, capture a sighting |
-| **Bearing** | take | "Take a bearing" — interpret what was observed, write it to the logbook |
-| **Action** | perform | "Perform an action" — do something in the world, the logbook records it |
-| **Voyage** | start / complete | "Start a voyage" / "Complete a voyage" |
+| **Observation** | observe | "Observe an issue" — look at it, capture what came back |
+| **Bearing** | seal | "Seal a bearing" — curate the working set at decision time |
+| **Voyage** | start / end | "Start a voyage" / "End a voyage" |
 
-The logbook **records** — that's its job, not the caller's verb. You observe, take bearings, and perform actions. The logbook captures all of it.
+The logbook **records** — that's its job, not the caller's verb. You observe, steer, and log. The logbook captures what happened.
 
-Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
+## The Three Commands
 
-### Bearing vs. Observation
+### `helm observe`
 
-A bearing and an observation both start from a mark, but they capture different things.
+Gather observations into the working set. Never writes to the logbook. Cheap, frequent, ephemeral.
 
-- **Bearing** = marks + reading. What you looked at and what you made of it. Lightweight, always in the logbook.
-- **Observation** = mark + sighting. What you looked at and the raw data you saw. Heavy, stored separately, prunable.
+An observation has three parts:
 
-A bearing can reference multiple marks — you looked at several things and formed one reading.
-An observation is always a single look — one mark and what came back.
+- **target** — what you looked at (`Observe` variant)
+- **payload** — what came back (inline if small, hold reference if large)
+- **timestamp** — when
 
-Deleting an observation doesn't break the logbook's story — you still know what was looked at and what was concluded.
-The sighting is evidence; the reading is interpretation. Both reference the same marks, but they're decoupled records.
+The `Observe` enum is the extension surface for new observation types. Add a variant to teach helm to look at something new.
 
-## Example Flow: Resolving an Issue
+### `helm steer <intent>`
 
-A complete voyage, from start to finish.
+Execute an intent-based domain action that mutates collaborative state. One invocation = one logbook entry.
 
-### 1. Start the voyage
+What happens atomically:
 
-```bash
-$ helm voyage new --as john-agent --kind resolve-issue "Resolve #42: fix widget crash"
-a3b0fc12-...
+1. Curate the working set into a bearing
+2. Execute the action
+3. Record one logbook entry
+4. Clear the working set
+
+A single steer may perform multiple API calls internally (e.g., post a comment + add a label), but it logs as one semantic action.
+
+Steer subcommands are the extension surface for new capabilities. Each is a deterministic flow with a known shape. The stable contract is: seal, execute, record, clear.
+
+Initial steer subcommands:
+
+- `comment` — comment on an issue or PR
+- `create-issue` — create an issue
+- `edit-issue` — update issue title/body
+- `close-issue` — close an issue
+- `create-pr` — create a pull request
+- `edit-pr` — update PR title/body
+- `close-pr` — close a PR without merging
+- `request-review` — request reviewers on a PR
+- `reply-inline` — reply to an inline code review comment on a PR
+- `merge-pr` — merge a PR
+
+### `helm log`
+
+Record a deliberate state without mutating collaborative state. Same seal-and-clear behavior as steer.
+
+Use this when the voyage reaches a state worth recording but there's nothing to change in the world:
+
+- Waiting for feedback
+- Blocked on a decision
+- Ready for the next step
+
+## Collaborative State as the Boundary
+
+Only state transitions that cross the collaborative boundary get logged as steer actions. Local operations (git commits, branch management, file edits) are implementation details.
+
+Steer actions are typed by semantic intent, not by API call shape. The logbook records what happened (commented on issue, opened PR), not how (POST to /repos/.../comments).
+
+GitHub is the current collaborative boundary. The model supports other boundaries in the future without design changes.
+
+## Working Set and Bearing Curation
+
+Observations accumulate in the working set between steer/log commands. When either is called, helm curates the working set into a bearing:
+
+- Deduplicate by resource key (keep newest per resource)
+- Keep everything since last steer/log
+- Cap by count/size; spill large payloads to the hold
+- Seal into the log entry's bearing
+- Clear the working set
+
+No manual curation step. The invariant: any command that writes to the logbook seals and clears.
+
+## The Hold
+
+Per-voyage content-addressed storage for large payloads.
+
+```
+voyage/<id>/hold/<sha256>.zst
 ```
 
-Creates:
-```
-~/.helm/voyages/a3b0fc12-.../
-  voyage.json    # { kind: ResolveIssue, intent: "Resolve #42: ...", status: Active }
-```
+- Small payloads stay inline in observation records.
+- Large payloads get compressed and stored in the hold, referenced by hash.
+- Free deduplication within a voyage — same content, same hash, stored once.
+- Not cleared when the working set clears.
 
-### 2. Observe the world
+## Example Flow: Advancing an Issue
 
-```bash
-$ helm --voyage a3b observe rust-project . --out obs.json
-Observation written to obs.json
-```
+A voyage from issue through PR to merge.
 
-Produces an `Observation`:
-```
-{
-  mark: Mark::RustProject { root: "." },
-  sighting: Sighting::RustProject { listings: [...], contents: [...] },
-  observed_at: "2026-02-26T17:00:00Z"
-}
-```
+### 1. Start a voyage
 
-The mark says *what* was looked at (a Rust project at `.`).
-The sighting contains the full directory tree and documentation file contents.
+Create a voyage with intent.
 
-Source code is not read. This is deliberate — `RustProject` is for orientation.
-It answers "what is this project and how is it structured?" not "what does the code do?"
-Once you know which files matter, use `Mark::FileContents` with targeted paths to read them.
-Orient first, then target. This two-step pattern — broad observation to get your bearings,
-then targeted reads where it matters — is central to how Helm works.
+### 2. Observe
 
-### 3. Take a bearing
+Observe the issue, the project structure, relevant source files.
+Each observation lands in the working set. Nothing is logged yet.
 
-```bash
-$ helm --voyage a3b bearing --reading "Widget module has a null check missing in init(). Test coverage exists but doesn't hit this path." --observation obs.json
-Bearing taken for voyage a3b0fc12
-Reading: Widget module has a null check missing in init()...
-```
+### 3. Steer: comment with a plan
 
-Appends a `LogbookEntry::Bearing` to `logbook.jsonl`:
-```
-{
-  marks: [RustProject { root: "." }],
-  reading: { text: "Widget module has a null check...", history: [] },
-  taken_at: "2026-02-26T17:01:00Z"
-}
-```
+Steer to comment on the issue with a proposed plan.
+Helm seals a bearing from the working set, posts the comment, records one logbook entry, clears the working set.
 
-The observation (mark + sighting) is stored separately as a prunable artifact.
-The bearing (marks + reading) stays in the logbook — lightweight, always available.
-Scanning the logbook later, the bearing reads: *"Looked at the Rust project. Widget module has a null check missing."*
+### 4. Log: waiting
 
-### 4. Do the work, then act
+Log a waiting state. Seals and clears, records the state. No collaborative state changes.
 
-```bash
-$ helm --voyage a3b action commit --message "Fix null check in widget init"
-Action performed for voyage a3b0fc12
-  committed (abc1234)
+### 5. Observe feedback, steer: create a PR
 
-$ helm --voyage a3b action push --branch fix-widget
-Action performed for voyage a3b0fc12
-  pushed to fix-widget (abc1234)
+Observe new comments on the issue. Steer to create a PR.
 
-$ helm --voyage a3b action create-pull-request --branch fix-widget --title "Fix widget crash" --reviewer dyreby
-Action performed for voyage a3b0fc12
-  created PR #45
-```
+### 6. Steer: request review
 
-Each action performs the operation and records it in the logbook. The logbook now has three `LogbookEntry::Action` entries.
+Steer to request review on the PR.
 
-### 5. Complete the voyage
+### 7. Observe review, steer: reply to feedback
 
-```bash
-$ helm --voyage a3b complete --summary "Fixed null check in widget init. PR #45 merged."
-Voyage a3b0fc12 completed
-Summary: Fixed null check in widget init. PR #45 merged.
-```
+Observe the PR (inline review comments). Steer to reply inline.
+
+### 8. Steer: merge
+
+Steer to merge the PR.
+
+### 9. End the voyage
+
+End the voyage with a freeform status.
 
 ### The logbook tells the story
 
-```bash
-$ helm --voyage a3b log
-Voyage: Resolve #42: fix widget crash
-Identity: john-agent
-Created: 2026-02-26T17:00:00Z
-Status: completed (2026-02-26T17:30:00Z)
-Summary: Fixed null check in widget init. PR #45 merged.
+```
+Voyage: Advance #42: fix widget crash
 
-── Bearing 1 ── 2026-02-26T17:01:00Z
-  Mark: RustProject @ .
-  Reading: Widget module has a null check missing in init().
-
-── Action 2 ── 2026-02-26T17:14:00Z
-  committed (abc1234)
-
-── Action 3 ── 2026-02-26T17:15:00Z
-  pushed to fix-widget (abc1234)
-
-── Action 4 ── 2026-02-26T17:16:00Z
-  created PR #45
+── Steer 1 ── comment on issue #42
+── Log 2 ── waiting
+── Steer 3 ── create PR #45
+── Steer 4 ── request review on PR #45
+── Steer 5 ── reply inline on PR #45
+── Steer 6 ── merge PR #45
 ```
 
-Marks, readings, actions. The voyage's story, without replaying raw sightings.
+Each entry carries its bearing (the observations that informed it) and the identity of who steered.
+The voyage's story, without implementation noise.
 
 ## Types
 
-### Mark
+### Observe
 
-The central enum. Each variant is a domain of observable reality.
-Adding a new source kind means adding a variant here and implementing its observation logic.
-
-The mark carries enough structure that scanning the logbook tells a story —
-you know *what* was looked at without replaying the sighting.
+The central enum. Each variant describes something helm can look at.
+Adding a new observation type means adding a variant here and implementing its observation logic.
 
 ```rust
-/// What you pointed the spyglass at.
-///
-/// Each variant describes a domain with enough detail to reconstruct
-/// what was observed at a glance. The mark is the logbook's label;
-/// the sighting is the raw data behind it.
-enum Mark {
+enum Observe {
     /// Read specific files.
-    ///
-    /// The simplest filesystem mark.
-    /// Returns the content of each file (text, binary, or error).
     FileContents { paths: Vec<PathBuf> },
 
     /// Recursive directory walk with filtering.
-    ///
-    /// Respects `.gitignore` by default.
-    /// `skip` names directories to skip at any depth (e.g. "target", "node_modules").
-    /// `max_depth` limits recursion depth (`None` = unlimited).
     DirectoryTree {
         root: PathBuf,
         skip: Vec<String>,
@@ -200,447 +202,140 @@ enum Mark {
     },
 
     /// A Rust project rooted at a directory.
-    ///
-    /// Walks the project tree (respects `.gitignore`, skips `target/`).
-    /// Lists the full directory tree with metadata.
-    /// Reads documentation files only — README, VISION, CONTRIBUTING,
-    /// agent instructions, etc. Source code is not read.
-    ///
-    /// This is an orientation mark. Use `FileContents` with targeted paths
-    /// to read specific source files on subsequent observations.
+    /// Walks the project tree, lists structure, reads documentation only.
+    /// An orientation observation — use FileContents for targeted reads.
     RustProject { root: PathBuf },
 
-    /// A GitHub pull request.
-    ///
-    /// Focus controls depth: summary for metadata,
-    /// diff/comments/reviews/checks/files for details.
-    /// Defaults to summary when no focus is specified.
-    GitHubPullRequest {
-        number: u64,
-        focus: Vec<PullRequestFocus>,   // Summary, Files, Checks, Diff, Comments, Reviews
-    },
-
     /// A GitHub issue.
-    ///
-    /// Focus controls depth: summary for metadata, comments for discussion.
-    /// Defaults to summary when no focus is specified.
     GitHubIssue {
         number: u64,
-        focus: Vec<IssueFocus>,         // Summary, Comments
+        focus: Vec<IssueFocus>,
+    },
+
+    /// A GitHub pull request.
+    GitHubPullRequest {
+        number: u64,
+        focus: Vec<PullRequestFocus>,
     },
 
     /// A GitHub repository.
-    ///
-    /// Lists open issues, pull requests, or both.
     GitHubRepository {
-        focus: Vec<RepositoryFocus>,    // Issues, PullRequests
+        focus: Vec<RepositoryFocus>,
     },
-
-    // ── Planned ──
-
-    // Human-provided context with no system-observable source.
-    //
-    // Offline conversations, decisions made outside the tool, background knowledge.
-    // No sighting to fetch — just a mark that describes what the context is about,
-    // and a reading the human attaches.
-    //
-    // Structure TBD. Minimum viable: a description string.
-    // Context {
-    //     description: String,
-    // },
 }
 ```
-
-Each filesystem mark describes one thing you pointed the spyglass at:
-`FileContents` reads files, `DirectoryTree` shows structure.
-`RustProject` is a domain-aware composite that uses `DirectoryTree` + `FileContents` internally.
-
-### Sighting
-
-Mirrors `Mark`. One variant per domain, containing the raw data from observation.
-
-```rust
-/// What was seen when observing a mark.
-///
-/// Each variant corresponds to a Mark variant.
-/// The sighting is the heavy payload — full file contents,
-/// directory trees, API responses. Stored separately from
-/// the bearing and prunable.
-enum Sighting {
-    /// Contents of specific files.
-    FileContents { contents: Vec<FileContents> },
-
-    /// Recursive directory tree.
-    DirectoryTree { listings: Vec<DirectoryListing> },
-
-    /// Rust project structure and documentation.
-    RustProject {
-        listings: Vec<DirectoryListing>,
-        contents: Vec<FileContents>,
-    },
-
-    /// Results from observing a GitHub pull request.
-    /// Boxed to keep variant sizes balanced.
-    GitHubPullRequest(Box<PullRequestSighting>),
-
-    /// Results from observing a GitHub issue.
-    GitHubIssue(Box<IssueSighting>),
-
-    /// Results from observing a GitHub repository.
-    GitHubRepository(Box<RepositorySighting>),
-}
-
-/// A directory listing: what's at this path.
-struct DirectoryListing {
-    path: PathBuf,
-    entries: Vec<DirectoryEntry>,
-}
-
-/// A single entry in a directory listing.
-struct DirectoryEntry {
-    name: String,
-    is_dir: bool,
-    size_bytes: Option<u64>,
-}
-
-/// A file and what was in it.
-struct FileContents {
-    path: PathBuf,
-    content: FileContent,
-}
-
-/// What was found when reading a file.
-///
-/// No file-type field (Rust, Markdown, TOML, etc.) — the file extension
-/// is in the `path` and the consumer knows what to do with the content.
-/// Adding a kind enum would duplicate derivable information and create
-/// a maintenance surface for every new file type encountered.
-///
-/// If structured parsing is ever needed (Rust AST, Markdown sections),
-/// that's a different sighting type, not a field here.
-enum FileContent {
-    /// UTF-8 text content.
-    Text { content: String },
-
-    /// File was not valid UTF-8. Size recorded for reference.
-    Binary { size_bytes: u64 },
-
-    /// File could not be read.
-    Error { message: String },
-}
-```
-
-Each mark gets its own sighting variant — a sighting contains exactly what its mark produces.
-`DirectoryListing` and `DirectoryTree` both use `Vec<DirectoryListing>` (the struct);
-the flat list of per-directory listings encodes the tree through paths.
-
-A `RustProject` observation returns both structure and documentation:
-
-```
-Sighting::RustProject {
-    listings: [
-        DirectoryListing { path: ".",    entries: [src/, Cargo.toml, README.md, ...] },
-        DirectoryListing { path: "./src", entries: [main.rs, model.rs, ...] },
-    ],
-    contents: [
-        FileContents { path: "README.md",       content: Text { "# Helm\n..." } },
-        FileContents { path: "CONTRIBUTING.md",  content: Text { "..." } },
-    ],
-}
-```
-
-`RustProject` walks the tree, so `listings` covers every directory — each file appears in its parent's listing so you know it exists and how big it is.
-`contents` has only documentation. Source files like `main.rs` show up in listings but aren't read.
-
-### Bearing
-
-```rust
-/// An immutable record: what was observed, and what it means.
-///
-/// A bearing can reference multiple marks — you looked at several things
-/// and formed one reading. The bearing is the logbook's narrative unit.
-///
-/// Identified by position in the logbook stream, not by ID.
-struct Bearing {
-    marks: Vec<Mark>,
-    observation_refs: Vec<u64>,
-    reading: Reading,
-    taken_at: Timestamp,
-}
-```
-
-Marks are extracted from observations at record time, so the bearing is
-self-describing — you see what was looked at without resolving refs.
-`observation_refs` are voyage-scoped integer IDs pointing to files in `observations/`.
 
 ### Observation
 
 ```rust
-/// A self-contained observation: one mark, one sighting, timestamped.
-///
-/// The raw capture. Take as many as you want; most are glances
-/// that get discarded. The ones worth keeping are stored as artifacts
-/// alongside the bearing, but separate from it.
-///
-/// Pruning observations doesn't break the logbook — the bearing
-/// still has the marks and the reading.
+/// A single observation: what was looked at and what came back.
 struct Observation {
-    mark: Mark,
-    sighting: Sighting,
+    /// What was looked at.
+    target: Observe,
+
+    /// What came back — inline if small, hold reference if large.
+    payload: Payload,
+
+    /// When the observation was made.
     observed_at: Timestamp,
 }
 ```
 
-### Reading
+### Bearing
 
 ```rust
-/// A short, plain-text interpretation of the world's state.
+/// Orientation at the moment of decision.
 ///
-/// The reading is the logbook's narrative voice — what you concluded
-/// from what you observed. Tracks the accepted text and the history
-/// of attempts that were challenged along the way.
-///
-/// The challenge history captures alignment gaps, not failures.
-struct Reading {
-    /// The accepted reading text.
-    text: String,
+/// Curated from the working set when steer or log is called.
+/// One bearing per log entry — many observations feed into
+/// one understanding of where you are.
+struct Bearing {
+    /// The observations that informed this decision.
+    observations: Vec<Observation>,
 
-    /// Prior attempts that were challenged before arriving at the accepted text.
-    history: Vec<ReadingAttempt>,
-}
-
-/// A single attempt at stating a reading, possibly challenged.
-struct ReadingAttempt {
-    /// The reading text that was proposed.
-    text: String,
-
-    /// Who produced this text.
-    source: ReadingSource,
-
-    /// Feedback that caused this attempt to be rejected.
-    /// Present on challenged attempts, absent on the final accepted one.
-    challenged_with: Option<String>,
-}
-
-/// Who authored a reading.
-enum ReadingSource {
-    /// Generated by the LLM.
-    Agent,
-
-    /// Written or edited by the user.
-    User,
+    /// Freeform interpretation of the current state.
+    summary: String,
 }
 ```
 
-### Action
+### Steer
 
 ```rust
-/// A single, immutable record of an operation Helm performed.
+/// Intent-based actions that mutate collaborative state.
 ///
-/// Only successful operations are recorded — the logbook captures
-/// what happened, not what was attempted.
-/// Identity is on the voyage, not the action.
-struct Action {
-    id: Uuid,
-
-    /// What was done.
-    kind: ActionKind,
-
-    performed_at: Timestamp,
-}
-
-/// What was done. Grouped by target, not by verb.
-///
-/// This grouping is deliberate: "what happened to PR #42" is a more
-/// natural question than "what was commented on." The target is the
-/// primary key; the verb is secondary.
-enum ActionKind {
-    /// Committed changes locally.
-    Commit { sha: String },
-
-    /// Pushed commits to a branch.
-    Push { branch: String, sha: String },
-
-    /// An action on a pull request.
-    PullRequest { number: u64, action: PullRequestAction },
-
-    /// An action on an issue.
-    Issue { number: u64, action: IssueAction },
-}
-
-/// Things you can do to a pull request.
-enum PullRequestAction {
-    Create,
-    Merge,
-    Comment,
-
-    /// Replied to an inline review comment.
-    /// Distinct from Comment because "I addressed feedback"
-    /// is a meaningful signal when reading the logbook.
-    Reply,
-
-    RequestedReview { reviewers: Vec<String> },
-}
-
-/// Things you can do to an issue.
-enum IssueAction {
-    Create,
-    Close,
-    Comment,
+/// Each variant is a steer subcommand — a deterministic flow
+/// with a known shape. This enum grows as helm learns new
+/// capabilities.
+enum Steer {
+    Comment { /* TBD */ },
+    CreateIssue { /* TBD */ },
+    EditIssue { /* TBD */ },
+    CloseIssue { /* TBD */ },
+    CreatePr { /* TBD */ },
+    EditPr { /* TBD */ },
+    ClosePr { /* TBD */ },
+    RequestReview { /* TBD */ },
+    ReplyInline { /* TBD */ },
+    MergePr { /* TBD */ },
 }
 ```
 
-Identity is set on the voyage at creation.
-Each identity has its own `gh` config directory under `~/.helm/gh-config/<identity>/`.
-A default identity is configured in `~/.helm/config.toml` and used when `--as` is omitted.
-
-### Logbook
-
-```rust
-/// A single entry in the logbook, serialized as one line of JSONL.
-///
-/// Tagged enum so each line is self-describing when read back.
-/// The logbook is append-only — nothing is overwritten or dropped.
-enum LogbookEntry {
-    /// A bearing was taken.
-    Bearing(Bearing),
-
-    /// An action was performed.
-    Action(Action),
-}
-```
-
-One file per voyage at `~/.helm/voyages/<uuid>/logbook.jsonl`.
+Variant fields are implementation detail — defined when each subcommand is built.
 
 ### Voyage
 
 ```rust
-/// A unit of work with intent, logbook, and outcome.
+/// A unit of work with a logbook.
 struct Voyage {
     id: Uuid,
-
-    /// The identity sailing this voyage (e.g. "john-agent", "dyreby").
-    /// Set at creation, inherited by all commands.
-    /// Can change via spelling (handoff to another identity).
-    identity: String,
-
-    kind: VoyageKind,
     intent: String,
     created_at: Timestamp,
     status: VoyageStatus,
 }
 
-/// The kind of voyage, which frames the first bearing.
-enum VoyageKind {
-    /// Unscoped, general-purpose voyage.
-    OpenWaters,
-
-    /// Resolve a GitHub issue.
-    ResolveIssue,
-}
-
-/// Where a voyage stands in its lifecycle.
 enum VoyageStatus {
     Active,
-
-    Completed {
-        completed_at: Timestamp,
-        summary: Option<String>,
+    Ended {
+        ended_at: Timestamp,
+        status: Option<String>,
     },
 }
 ```
-
-`VoyageKind` frames the first bearing but doesn't constrain the voyage after that.
-
-## Source Kinds
-
-Each mark describes a domain of observable reality — not a mechanism.
-Commands are how Helm fetches data; marks describe what Helm is looking at.
-
-- **FileContents** — read specific files. Implemented.
-- **DirectoryTree** — recursive walk with `.gitignore`, skip patterns, depth limits. Implemented.
-- **RustProject** — full project tree, documentation files. Domain-aware composite. Implemented.
-- **GitHub** — PR/issue metadata, check summaries, diffs, comment bodies, inline review threads. Implemented as three marks: `GitHubPullRequest`, `GitHubIssue`, `GitHubRepository`, each with domain-specific focus items.
-- **Context** — human-provided context with no system-observable source. Planned.
-- **Web** — status, headers, response bodies. Future.
-
-Web-based kinds graduate to their own domain when their observation semantics are rich enough.
-
-## The Agent Contract
-
-The agent is stateless. Every call receives explicit context and returns a structured result. No ongoing session. No hidden memory.
-
-| Phase | Input | Output |
-|-------|-------|--------|
-| **Take Bearing** | Bearing history (observations + readings) | A reading |
-| **Correct Reading** | Bearing history + human feedback | A revised reading |
-| **Correct Course** | Current bearing + history + constraints | New marks to observe, an action plan, or abort |
-
-Structural constraints — not instructions:
-- The agent never executes tools.
-- The agent never sees raw sightings from prior bearings.
-- The agent never expands scope without human approval.
-
-A reading describes; it never prescribes.
-If it feels wrong, the human challenges it and the agent re-generates.
 
 ## Storage
 
 ```
 ~/.helm/
-  config.toml           # default-identity and future settings
+  config.toml
   voyages/
     <uuid>/
-      voyage.json       # Voyage metadata
-      logbook.jsonl     # Append-only logbook entries
-      observations/     # Prunable observation artifacts
-        1.json          # Observation referenced by bearing
-        2.json
-  gh-config/
-    <identity>/         # Per-identity gh auth
+      voyage.json
+      logbook.jsonl
+      working.jsonl
+      hold/
+        <sha256>.zst
 ```
 
-Observations are stored as separate JSON files, one per observation.
-IDs are linear integers scoped to the voyage.
-Bearings reference observations by ID — deleting an observation file
-doesn't break the logbook's narrative.
-Pruning is manual: delete files from `observations/`.
+- **logbook.jsonl** — append-only log entries, written by steer and log.
+- **working.jsonl** — observations since last steer/log. Cleared on seal.
+- **hold/** — compressed large payloads, content-addressed by hash.
 
 ## CLI
 
-Commands split into two groups: voyage lifecycle (no `--voyage` needed)
-and voyage-scoped operations (require `--voyage`).
+Helm's CLI has two groups:
 
-Identity is set at voyage creation and inherited by all commands.
-Helm is for voyages only — no voyage, no helm.
+- **Voyage lifecycle**: create, end, list voyages.
+- **Voyage-scoped**: observe, steer, log — require a voyage context.
 
-```
-helm voyage new --as <identity> <intent> [--kind open-waters|resolve-issue]
-helm voyage list
+Specific flags and arguments are implementation detail, defined when each subcommand is built.
 
-helm --voyage <id> observe file-contents --read <file>...
-helm --voyage <id> observe directory-tree <root> [--skip <name>...] [--max-depth <n>]
-helm --voyage <id> observe rust-project <path>
-helm --voyage <id> observe github-pr <number> [--focus summary|files|checks|diff|comments|reviews]
-helm --voyage <id> observe github-issue <number> [--focus summary|comments]
-helm --voyage <id> observe github-repo [--focus issues|pull-requests]
+## Identity
 
-helm --voyage <id> bearing --reading <text> [--observation <file>...]
+Identity is recorded per log entry, not per voyage. Multiple agents or people can steer the same voyage — the logbook records who did what.
 
-helm --voyage <id> action <action-subcommand>
-
-helm --voyage <id> complete [--summary <text>]
-helm --voyage <id> log
-```
-
-`--voyage` takes a full UUID or unambiguous prefix (e.g. `a3b`).
-`helm observe` outputs JSON to stdout or `--out <file>`.
-`helm bearing` reads observations from `--observation` files or stdin.
-`helm action` performs the operation and records it in the logbook.
-Identity for `act` comes from the voyage — no per-command `--as`.
+How identity is determined (config, flags, environment) is implementation detail.
 
 ## Open Questions
 
-- **Context mark**: structure TBD.
-  Minimum viable: a description string and a reading.
-
+- **Bearing summary**: who writes it? Always the caller? Auto-generated? Optional?
+- **Payload threshold**: at what size do payloads spill to the hold?
