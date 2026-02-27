@@ -10,7 +10,6 @@
 //!
 //! The `--voyage` flag takes a full UUID or unambiguous prefix.
 
-mod format;
 mod observe;
 mod slate;
 mod target;
@@ -54,7 +53,7 @@ Identity (--as):
 
 Observe:
   helm observe --voyage a3b --as dyreby file-contents --read src/widget.rs
-  helm observe --voyage a3b --as dyreby github-pr 42 --focus full
+  helm observe --voyage a3b --as dyreby github-pr 42
   helm observe --voyage a3b --as dyreby github-repo"#;
 
 #[derive(Debug, Subcommand)]

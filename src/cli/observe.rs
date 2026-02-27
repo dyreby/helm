@@ -8,7 +8,7 @@ use crate::{
     storage::Storage,
 };
 
-use super::{format::format_pr_focus, target::ObserveTarget};
+use super::target::ObserveTarget;
 
 pub(super) fn cmd_observe(
     storage: &Storage,
@@ -42,13 +42,9 @@ pub(super) fn cmd_observe(
             false,
         ),
         ObserveTarget::RustProject { path } => (Observe::RustProject { root: path.clone() }, false),
-        ObserveTarget::GitHubPullRequest { number, focus } => (
-            Observe::GitHubPullRequest {
-                number: *number,
-                focus: focus.to_domain(),
-            },
-            true,
-        ),
+        ObserveTarget::GitHubPullRequest { number } => {
+            (Observe::GitHubPullRequest { number: *number }, true)
+        }
         ObserveTarget::GitHubIssue { number } => (Observe::GitHubIssue { number: *number }, true),
         ObserveTarget::GitHubRepository => (Observe::GitHubRepository, true),
     };
@@ -92,9 +88,7 @@ fn describe_observe_target(target: &ObserveTarget) -> String {
             format!("directory tree at {}", root.display())
         }
         ObserveTarget::RustProject { path } => format!("Rust project at {}", path.display()),
-        ObserveTarget::GitHubPullRequest { number, focus } => {
-            format!("PR #{number} [{}]", format_pr_focus(&focus.to_domain()))
-        }
+        ObserveTarget::GitHubPullRequest { number } => format!("PR #{number}"),
         ObserveTarget::GitHubIssue { number } => format!("issue #{number}"),
         ObserveTarget::GitHubRepository => "repository".to_string(),
     }

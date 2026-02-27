@@ -1,7 +1,6 @@
 //! GitHub observation: PRs, issues, and repository listings.
 //!
 //! Fetches data via the `gh` CLI, authenticated using the voyage's identity.
-//! Each focus level maps to one or more `gh` commands.
 
 use std::{path::Path, process::Command};
 
@@ -9,31 +8,19 @@ use serde::Deserialize;
 
 use crate::model::{
     CheckRun, GitHubComment, GitHubIssueSummary, GitHubPullRequestSummary, GitHubSummary,
-    IssuePayload, Payload, PullRequestFocus, PullRequestPayload, RepositoryPayload, ReviewComment,
+    IssuePayload, Payload, PullRequestPayload, RepositoryPayload, ReviewComment,
 };
 
-/// Observe a pull request at the requested focus level.
+/// Observe a pull request.
 ///
-/// `Summary` fetches metadata and comments.
-/// `Full` fetches everything: metadata, comments, diff, files, checks, and inline reviews.
-/// Defaults to `Summary` when focus is not specified.
-pub fn observe_github_pull_request(
-    number: u64,
-    focus: &PullRequestFocus,
-    gh_config: &Path,
-) -> Payload {
+/// Always fetches everything: metadata, comments, diff, files, checks, and inline reviews.
+pub fn observe_github_pull_request(number: u64, gh_config: &Path) -> Payload {
     let summary = fetch_pr_summary(number, gh_config);
     let comments = fetch_pr_comments(number, gh_config);
-
-    let (files, checks, diff, reviews) = match focus {
-        PullRequestFocus::Summary => (vec![], vec![], None, vec![]),
-        PullRequestFocus::Full => (
-            fetch_pr_files(number, gh_config),
-            fetch_pr_checks(number, gh_config),
-            fetch_pr_diff(number, gh_config),
-            fetch_pr_reviews(number, gh_config),
-        ),
-    };
+    let files = fetch_pr_files(number, gh_config);
+    let checks = fetch_pr_checks(number, gh_config);
+    let diff = fetch_pr_diff(number, gh_config);
+    let reviews = fetch_pr_reviews(number, gh_config);
 
     Payload::GitHubPullRequest(Box::new(PullRequestPayload {
         summary,

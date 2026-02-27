@@ -30,9 +30,9 @@ pub fn observe(target: &Observe, gh_config_dir: Option<&Path>) -> Payload {
             max_depth,
         } => observe_directory_tree(root, skip, *max_depth),
         Observe::RustProject { root } => observe_rust_project(root),
-        Observe::GitHubPullRequest { number, focus } => {
+        Observe::GitHubPullRequest { number } => {
             let config = gh_config_dir.expect("GitHub targets require gh_config_dir");
-            observe_github_pull_request(*number, focus, config)
+            observe_github_pull_request(*number, config)
         }
         Observe::GitHubIssue { number } => {
             let config = gh_config_dir.expect("GitHub targets require gh_config_dir");

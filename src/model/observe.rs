@@ -38,24 +38,12 @@ pub enum Observe {
     GitHubIssue { number: u64 },
 
     /// A GitHub pull request.
-    GitHubPullRequest {
-        number: u64,
-        focus: PullRequestFocus,
-    },
+    ///
+    /// Always fetches everything: metadata, comments, diff, files, checks, and inline reviews.
+    GitHubPullRequest { number: u64 },
 
     /// A GitHub repository.
     ///
     /// Always fetches open issues and pull requests.
     GitHubRepository,
-}
-
-/// How much of a pull request to observe.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PullRequestFocus {
-    /// PR metadata and comments.
-    Summary,
-
-    /// Everything: metadata, comments, diff, files, checks, and inline reviews.
-    Full,
 }
