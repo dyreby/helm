@@ -5,25 +5,27 @@
 //!
 //! Commands split into two groups:
 //!
-//! - `helm voyage new|list` — lifecycle management, no voyage context needed.
+//! - `helm voyage new|list|end` — lifecycle management, no voyage context needed.
 //! - `helm --voyage <id> <command>` — everything else, operating within a voyage.
 //!
 //! The `--voyage` flag takes a full UUID or unambiguous prefix.
 
 mod format;
 
-use std::fs;
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::config::Config;
-use crate::model::{IssueFocus, Observe, PullRequestFocus, RepositoryFocus, Voyage, VoyageStatus};
-use crate::{bearing, storage::Storage};
+use crate::{
+    bearing,
+    config::Config,
+    model::{Observe, PullRequestFocus, Voyage, VoyageStatus},
+    storage::Storage,
+};
 
-use format::{format_issue_focuses, format_pr_focuses, format_repo_focuses};
+use format::format_pr_focus;
 
 /// Helm — navigate your work.
 #[derive(Debug, Parser)]
@@ -41,18 +43,18 @@ pub struct Cli {
 const WORKFLOW_HELP: &str = r#"Workflow: advancing an issue
   1. helm voyage new --as john-agent "Resolve #42: fix widget crash"
      → prints a voyage ID (e.g. a3b0fc12)
-  2. helm --voyage a3b observe github-issue 42 --focus summary --focus comments
+  2. helm --voyage a3b observe github-issue 42
   3. helm --voyage a3b steer comment 42 "Here's my plan: ..."
   4. helm --voyage a3b voyage end --status "Merged PR #45"
 
 Observe:
   helm --voyage a3b observe file-contents --read src/widget.rs
-  helm --voyage a3b observe github-pr 42 --focus summary --focus diff
-  helm --voyage a3b observe github-repo --focus issues"#;
+  helm --voyage a3b observe github-pr 42 --focus full
+  helm --voyage a3b observe github-repo"#;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Manage voyages: create new ones, list existing.
+    /// Manage voyages: create new ones, list existing, end them.
     Voyage {
         #[command(subcommand)]
         command: VoyageCommand,
@@ -124,7 +126,7 @@ pub enum VoyageCommand {
         intent: String,
     },
 
-    /// List active voyages.
+    /// List voyages.
     List,
 
     /// End a voyage.
@@ -168,106 +170,49 @@ pub enum ObserveSource {
 
     /// Observe a GitHub pull request.
     ///
-    /// Fetches PR metadata, diff, comments, reviews, checks, or changed files.
-    /// Defaults to summary when no `--focus` is specified.
+    /// `summary` fetches metadata and comments.
+    /// `full` fetches everything: metadata, comments, diff, files, checks, and inline reviews.
+    /// Defaults to summary when `--focus` is not specified.
     #[command(name = "github-pr")]
     GitHubPullRequest {
         /// PR number.
         number: u64,
 
-        /// What to observe. Can be specified multiple times.
-        #[arg(long, value_enum)]
-        focus: Vec<PrFocusArg>,
+        /// How much to fetch.
+        #[arg(long, value_enum, default_value_t = PrFocusArg::Summary)]
+        focus: PrFocusArg,
     },
 
     /// Observe a GitHub issue.
     ///
-    /// Fetches issue metadata or comments.
-    /// Defaults to summary when no `--focus` is specified.
+    /// Always fetches metadata and comments.
     #[command(name = "github-issue")]
     GitHubIssue {
         /// Issue number.
         number: u64,
-
-        /// What to observe. Can be specified multiple times.
-        #[arg(long, value_enum)]
-        focus: Vec<IssueFocusArg>,
     },
 
     /// Observe a GitHub repository.
     ///
-    /// Lists open issues, pull requests, or both.
-    /// Defaults to both when no `--focus` is specified.
+    /// Always fetches open issues and pull requests.
     #[command(name = "github-repo")]
-    GitHubRepository {
-        /// What to observe. Can be specified multiple times.
-        #[arg(long, value_enum)]
-        focus: Vec<RepoFocusArg>,
-    },
+    GitHubRepository,
 }
 
 /// CLI-facing PR focus, mapped to the domain `PullRequestFocus`.
 #[derive(Debug, Clone, ValueEnum)]
 pub enum PrFocusArg {
-    /// PR metadata: title, state, author, labels, assignees.
+    /// PR metadata and comments.
     Summary,
-    /// Changed file paths.
-    Files,
-    /// CI check status.
-    Checks,
-    /// Full diff.
-    Diff,
-    /// Top-level PR comments.
-    Comments,
-    /// Inline review comments with threads.
-    Reviews,
+    /// Everything: metadata, comments, diff, files, checks, and inline reviews.
+    Full,
 }
 
 impl PrFocusArg {
     fn to_domain(&self) -> PullRequestFocus {
         match self {
             Self::Summary => PullRequestFocus::Summary,
-            Self::Files => PullRequestFocus::Files,
-            Self::Checks => PullRequestFocus::Checks,
-            Self::Diff => PullRequestFocus::Diff,
-            Self::Comments => PullRequestFocus::Comments,
-            Self::Reviews => PullRequestFocus::Reviews,
-        }
-    }
-}
-
-/// CLI-facing issue focus, mapped to the domain `IssueFocus`.
-#[derive(Debug, Clone, ValueEnum)]
-pub enum IssueFocusArg {
-    /// Issue metadata: title, state, author, labels, assignees.
-    Summary,
-    /// Issue comments.
-    Comments,
-}
-
-impl IssueFocusArg {
-    fn to_domain(&self) -> IssueFocus {
-        match self {
-            Self::Summary => IssueFocus::Summary,
-            Self::Comments => IssueFocus::Comments,
-        }
-    }
-}
-
-/// CLI-facing repository focus, mapped to the domain `RepositoryFocus`.
-#[derive(Debug, Clone, ValueEnum)]
-pub enum RepoFocusArg {
-    /// Open issues.
-    Issues,
-    /// Open pull requests.
-    PullRequests,
-}
-
-impl RepoFocusArg {
-    fn to_domain(&self) -> RepositoryFocus {
-        match self {
-            Self::Issues => RepositoryFocus::Issues,
-            Self::PullRequests => RepositoryFocus::PullRequests,
+            Self::Full => PullRequestFocus::Full,
         }
     }
 }
@@ -381,23 +326,12 @@ fn cmd_observe(
         ObserveSource::GitHubPullRequest { number, focus } => (
             Observe::GitHubPullRequest {
                 number: *number,
-                focus: focus.iter().map(PrFocusArg::to_domain).collect(),
+                focus: focus.to_domain(),
             },
             true,
         ),
-        ObserveSource::GitHubIssue { number, focus } => (
-            Observe::GitHubIssue {
-                number: *number,
-                focus: focus.iter().map(IssueFocusArg::to_domain).collect(),
-            },
-            true,
-        ),
-        ObserveSource::GitHubRepository { focus } => (
-            Observe::GitHubRepository {
-                focus: focus.iter().map(RepoFocusArg::to_domain).collect(),
-            },
-            true,
-        ),
+        ObserveSource::GitHubIssue { number } => (Observe::GitHubIssue { number: *number }, true),
+        ObserveSource::GitHubRepository => (Observe::GitHubRepository, true),
     };
 
     let gh_config = if needs_gh {
@@ -480,28 +414,10 @@ fn describe_observe_source(source: &ObserveSource) -> String {
         }
         ObserveSource::RustProject { path } => format!("Rust project at {}", path.display()),
         ObserveSource::GitHubPullRequest { number, focus } => {
-            let focuses =
-                format_pr_focuses(&focus.iter().map(PrFocusArg::to_domain).collect::<Vec<_>>());
-            format!("PR #{number} [{focuses}]")
+            format!("PR #{number} [{}]", format_pr_focus(&focus.to_domain()))
         }
-        ObserveSource::GitHubIssue { number, focus } => {
-            let focuses = format_issue_focuses(
-                &focus
-                    .iter()
-                    .map(IssueFocusArg::to_domain)
-                    .collect::<Vec<_>>(),
-            );
-            format!("issue #{number} [{focuses}]")
-        }
-        ObserveSource::GitHubRepository { focus } => {
-            let focuses = format_repo_focuses(
-                &focus
-                    .iter()
-                    .map(RepoFocusArg::to_domain)
-                    .collect::<Vec<_>>(),
-            );
-            format!("repository [{focuses}]")
-        }
+        ObserveSource::GitHubIssue { number } => format!("issue #{number}"),
+        ObserveSource::GitHubRepository => "repository".to_string(),
     }
 }
 

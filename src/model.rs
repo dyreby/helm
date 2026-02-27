@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 pub use bearing::Bearing;
 pub use observation::Observation;
-pub use observe::{IssueFocus, Observe, PullRequestFocus, RepositoryFocus};
+pub use observe::{Observe, PullRequestFocus};
 pub use payload::{
     CheckRun, DirectoryEntry, DirectoryListing, FileContent, FileContents, GitHubComment,
     GitHubIssueSummary, GitHubPullRequestSummary, GitHubSummary, IssuePayload, Payload,
@@ -32,21 +32,23 @@ pub use voyage::{Voyage, VoyageStatus};
 // TODO: remove once steer (#100) and log (#101) are wired to the CLI.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "entry", rename_all = "camelCase")]
-pub enum LogbookEntry {
+#[serde(rename_all = "camelCase")]
+pub struct LogbookEntry {
+    pub bearing: Bearing,
+    pub author: String,
+    pub timestamp: Timestamp,
+    pub kind: EntryKind,
+}
+
+/// What kind of logbook entry this is.
+// TODO: remove once steer (#100) and log (#101) are wired to the CLI.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data", rename_all = "camelCase")]
+pub enum EntryKind {
     /// A steering action: mutated collaborative state.
-    Steer {
-        bearing: Bearing,
-        action: Steer,
-        identity: String,
-        steered_at: Timestamp,
-    },
+    Steer(Steer),
 
     /// A logged state: recorded without mutation.
-    Log {
-        bearing: Bearing,
-        status: String,
-        identity: String,
-        logged_at: Timestamp,
-    },
+    Log(String),
 }

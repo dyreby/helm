@@ -33,59 +33,29 @@ pub enum Observe {
     RustProject { root: PathBuf },
 
     /// A GitHub issue.
-    GitHubIssue { number: u64, focus: Vec<IssueFocus> },
+    ///
+    /// Always fetches metadata and comments.
+    GitHubIssue { number: u64 },
 
     /// A GitHub pull request.
     GitHubPullRequest {
         number: u64,
-        focus: Vec<PullRequestFocus>,
+        focus: PullRequestFocus,
     },
 
     /// A GitHub repository.
-    GitHubRepository { focus: Vec<RepositoryFocus> },
+    ///
+    /// Always fetches open issues and pull requests.
+    GitHubRepository,
 }
 
-/// What to observe about an issue.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum IssueFocus {
-    /// Issue metadata: title, state, author, labels, assignees.
-    Summary,
-
-    /// Issue comments.
-    Comments,
-}
-
-/// What to observe about a pull request.
+/// How much of a pull request to observe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PullRequestFocus {
-    /// PR metadata: title, state, author, labels, assignees.
+    /// PR metadata and comments.
     Summary,
 
-    /// Changed file paths.
-    Files,
-
-    /// CI check status.
-    Checks,
-
-    /// Full diff.
-    Diff,
-
-    /// Top-level PR comments.
-    Comments,
-
-    /// Inline review comments with threads.
-    Reviews,
-}
-
-/// What to observe about a repository.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum RepositoryFocus {
-    /// Open issues.
-    Issues,
-
-    /// Open pull requests.
-    PullRequests,
+    /// Everything: metadata, comments, diff, files, checks, and inline reviews.
+    Full,
 }

@@ -34,13 +34,13 @@ pub fn observe(target: &Observe, gh_config_dir: Option<&Path>) -> Payload {
             let config = gh_config_dir.expect("GitHub targets require gh_config_dir");
             observe_github_pull_request(*number, focus, config)
         }
-        Observe::GitHubIssue { number, focus } => {
+        Observe::GitHubIssue { number } => {
             let config = gh_config_dir.expect("GitHub targets require gh_config_dir");
-            observe_github_issue(*number, focus, config)
+            observe_github_issue(*number, config)
         }
-        Observe::GitHubRepository { focus } => {
+        Observe::GitHubRepository => {
             let config = gh_config_dir.expect("GitHub targets require gh_config_dir");
-            observe_github_repository(focus, config)
+            observe_github_repository(config)
         }
     }
 }

@@ -87,20 +87,20 @@ mod tests {
     }
 
     fn sample_steer_entry() -> LogbookEntry {
-        LogbookEntry::Steer {
+        LogbookEntry {
             bearing: sample_bearing(),
-            action: Steer::Comment,
-            identity: "john-agent".into(),
-            steered_at: Timestamp::now(),
+            author: "john-agent".into(),
+            timestamp: Timestamp::now(),
+            kind: EntryKind::Steer(Steer::Comment),
         }
     }
 
     fn sample_log_entry() -> LogbookEntry {
-        LogbookEntry::Log {
+        LogbookEntry {
             bearing: sample_bearing(),
-            status: "Waiting for review.".into(),
-            identity: "john-agent".into(),
-            logged_at: Timestamp::now(),
+            author: "john-agent".into(),
+            timestamp: Timestamp::now(),
+            kind: EntryKind::Log("Waiting for review.".into()),
         }
     }
 
@@ -119,8 +119,8 @@ mod tests {
 
         let entries = storage.load_logbook(voyage.id).unwrap();
         assert_eq!(entries.len(), 2);
-        assert!(matches!(entries[0], LogbookEntry::Steer { .. }));
-        assert!(matches!(entries[1], LogbookEntry::Log { .. }));
+        assert!(matches!(entries[0].kind, EntryKind::Steer(Steer::Comment)));
+        assert!(matches!(entries[1].kind, EntryKind::Log(_)));
     }
 
     #[test]
