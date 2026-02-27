@@ -1,0 +1,106 @@
+//! Observe command: gather observations into the slate.
+
+use std::{fs, path::PathBuf};
+
+use crate::{
+    bearing,
+    model::{Observe, Voyage},
+    storage::Storage,
+};
+
+use super::{
+    format::format_pr_focus,
+    target::ObserveTarget,
+};
+
+pub(super) fn cmd_observe(
+    storage: &Storage,
+    voyage: &Voyage,
+    identity: Option<&str>,
+    target: &ObserveTarget,
+    out: Option<PathBuf>,
+) -> Result<(), String> {
+    let (observe, needs_gh) = match target {
+        ObserveTarget::FileContents { read } => {
+            if read.is_empty() {
+                return Err("specify at least one --read".to_string());
+            }
+            (
+                Observe::FileContents {
+                    paths: read.clone(),
+                },
+                false,
+            )
+        }
+        ObserveTarget::DirectoryTree {
+            root,
+            skip,
+            max_depth,
+        } => (
+            Observe::DirectoryTree {
+                root: root.clone(),
+                skip: skip.clone(),
+                max_depth: *max_depth,
+            },
+            false,
+        ),
+        ObserveTarget::RustProject { path } => (Observe::RustProject { root: path.clone() }, false),
+        ObserveTarget::GitHubPullRequest { number, focus } => (
+            Observe::GitHubPullRequest {
+                number: *number,
+                focus: focus.to_domain(),
+            },
+            true,
+        ),
+        ObserveTarget::GitHubIssue { number } => {
+            (Observe::GitHubIssue { number: *number }, true)
+        }
+        ObserveTarget::GitHubRepository => (Observe::GitHubRepository, true),
+    };
+
+    let gh_config = if needs_gh {
+        let id = identity.ok_or("GitHub observations require --as <identity>".to_string())?;
+        Some(super::gh_config_dir(id)?)
+    } else {
+        None
+    };
+
+    let observation = bearing::observe(&observe, gh_config.as_deref());
+
+    let json = serde_json::to_string_pretty(&observation)
+        .map_err(|e| format!("failed to serialize observation: {e}"))?;
+
+    storage
+        .append_slate(voyage.id, &observation)
+        .map_err(|e| format!("failed to append to slate: {e}"))?;
+
+    match out {
+        Some(path) => {
+            fs::write(&path, &json)
+                .map_err(|e| format!("failed to write {}: {e}", path.display()))?;
+            let summary = describe_observe_target(target);
+            eprintln!("Observed {summary} → {}", path.display());
+        }
+        None => {
+            println!("{json}");
+        }
+    }
+
+    Ok(())
+}
+
+/// Short human-readable description of what was observed.
+fn describe_observe_target(target: &ObserveTarget) -> String {
+    match target {
+        ObserveTarget::FileContents { read } => format!("{} file(s)", read.len()),
+        ObserveTarget::DirectoryTree { root, .. } => {
+            format!("directory tree at {}", root.display())
+        }
+        ObserveTarget::RustProject { path } => format!("Rust project at {}", path.display()),
+        ObserveTarget::GitHubPullRequest { number, focus } => {
+            format!("PR #{number} [{}]", format_pr_focus(&focus.to_domain()))
+        }
+        ObserveTarget::GitHubIssue { number } => format!("issue #{number}"),
+        ObserveTarget::GitHubRepository => "repository".to_string(),
+    }
+}

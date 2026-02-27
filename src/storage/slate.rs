@@ -1,9 +1,9 @@
-//! Working set storage: observations accumulating between steer/log commands.
+//! Slate storage: observations accumulating between steer/log commands.
 //!
-//! Observations are appended to `working.jsonl` as they arrive.
-//! When steer or log is called, the working set is loaded, sealed into a
+//! Observations are appended to `slate.jsonl` as they arrive.
+//! When steer or log is called, the slate is loaded, sealed into a
 //! bearing, and then cleared. The file is removed on clear — a missing file
-//! is a valid empty working set.
+//! is a valid empty slate.
 
 use std::{fs, io};
 
@@ -17,8 +17,8 @@ use crate::model::Observation;
 use super::{Result, Storage, StorageError};
 
 impl Storage {
-    /// Appends an observation to the voyage's working set.
-    pub fn append_working(&self, voyage_id: Uuid, observation: &Observation) -> Result<()> {
+    /// Appends an observation to the voyage's slate.
+    pub fn append_slate(&self, voyage_id: Uuid, observation: &Observation) -> Result<()> {
         let dir = self.voyage_dir(voyage_id);
         if !dir.exists() {
             return Err(StorageError::VoyageNotFound(voyage_id));
@@ -26,18 +26,18 @@ impl Storage {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(dir.join("working.jsonl"))?;
+            .open(dir.join("slate.jsonl"))?;
         let mut line = serde_json::to_string(observation)?;
         line.push('\n');
         file.write_all(line.as_bytes())?;
         Ok(())
     }
 
-    /// Loads all observations from the voyage's working set.
+    /// Loads all observations from the voyage's slate.
     ///
-    /// Returns an empty vec if the working set file doesn't exist.
-    pub fn load_working(&self, voyage_id: Uuid) -> Result<Vec<Observation>> {
-        let path = self.voyage_dir(voyage_id).join("working.jsonl");
+    /// Returns an empty vec if the slate file doesn't exist.
+    pub fn load_slate(&self, voyage_id: Uuid) -> Result<Vec<Observation>> {
+        let path = self.voyage_dir(voyage_id).join("slate.jsonl");
         if !path.exists() {
             let dir = self.voyage_dir(voyage_id);
             if !dir.exists() {
@@ -57,15 +57,15 @@ impl Storage {
         Ok(observations)
     }
 
-    /// Clears the voyage's working set by removing `working.jsonl`.
+    /// Clears the voyage's slate by removing `slate.jsonl`.
     ///
     /// Idempotent: does nothing if the file doesn't exist.
-    pub fn clear_working(&self, voyage_id: Uuid) -> Result<()> {
+    pub fn clear_slate(&self, voyage_id: Uuid) -> Result<()> {
         let dir = self.voyage_dir(voyage_id);
         if !dir.exists() {
             return Err(StorageError::VoyageNotFound(voyage_id));
         }
-        let path = dir.join("working.jsonl");
+        let path = dir.join("slate.jsonl");
         if path.exists() {
             fs::remove_file(path)?;
         }
@@ -121,83 +121,83 @@ mod tests {
     }
 
     #[test]
-    fn append_and_load_working() {
+    fn append_and_load_slate() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
         let obs = sample_observation();
-        storage.append_working(voyage.id, &obs).unwrap();
-        storage.append_working(voyage.id, &obs).unwrap();
+        storage.append_slate(voyage.id, &obs).unwrap();
+        storage.append_slate(voyage.id, &obs).unwrap();
 
-        let loaded = storage.load_working(voyage.id).unwrap();
+        let loaded = storage.load_slate(voyage.id).unwrap();
         assert_eq!(loaded.len(), 2);
         assert!(matches!(loaded[0].target, Observe::DirectoryTree { .. }));
     }
 
     #[test]
-    fn load_working_empty_when_no_file() {
+    fn load_slate_empty_when_no_file() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
-        let loaded = storage.load_working(voyage.id).unwrap();
+        let loaded = storage.load_slate(voyage.id).unwrap();
         assert!(loaded.is_empty());
     }
 
     #[test]
-    fn clear_working_removes_file() {
+    fn clear_slate_removes_file() {
         let (dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
         storage
-            .append_working(voyage.id, &sample_observation())
+            .append_slate(voyage.id, &sample_observation())
             .unwrap();
-        storage.clear_working(voyage.id).unwrap();
+        storage.clear_slate(voyage.id).unwrap();
 
-        let working_path = dir
+        let slate_path = dir
             .path()
             .join("voyages")
             .join(voyage.id.to_string())
-            .join("working.jsonl");
-        assert!(!working_path.exists());
+            .join("slate.jsonl");
+        assert!(!slate_path.exists());
 
         // Load after clear returns empty.
-        let loaded = storage.load_working(voyage.id).unwrap();
+        let loaded = storage.load_slate(voyage.id).unwrap();
         assert!(loaded.is_empty());
     }
 
     #[test]
-    fn clear_working_idempotent() {
+    fn clear_slate_idempotent() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
         // Clear with no file — should not error.
-        storage.clear_working(voyage.id).unwrap();
+        storage.clear_slate(voyage.id).unwrap();
     }
 
     #[test]
-    fn append_working_nonexistent_voyage_fails() {
+    fn append_slate_nonexistent_voyage_fails() {
         let (_dir, storage) = test_storage();
         let err = storage
-            .append_working(Uuid::new_v4(), &sample_observation())
+            .append_slate(Uuid::new_v4(), &sample_observation())
             .unwrap_err();
         assert!(matches!(err, StorageError::VoyageNotFound(_)));
     }
 
     #[test]
-    fn load_working_nonexistent_voyage_fails() {
+    fn load_slate_nonexistent_voyage_fails() {
         let (_dir, storage) = test_storage();
-        let err = storage.load_working(Uuid::new_v4()).unwrap_err();
+        let err = storage.load_slate(Uuid::new_v4()).unwrap_err();
         assert!(matches!(err, StorageError::VoyageNotFound(_)));
     }
 
     #[test]
-    fn clear_working_nonexistent_voyage_fails() {
+    fn clear_slate_nonexistent_voyage_fails() {
         let (_dir, storage) = test_storage();
-        let err = storage.clear_working(Uuid::new_v4()).unwrap_err();
+        let err = storage.clear_slate(Uuid::new_v4()).unwrap_err();
         assert!(matches!(err, StorageError::VoyageNotFound(_)));
     }
 }

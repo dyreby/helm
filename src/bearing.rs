@@ -1,9 +1,9 @@
 //! Bearing construction: creating observations from targets and sealing bearings.
 //!
 //! `observe` wraps the observe module to produce timestamped `Observation` values.
-//! `seal` builds a `Bearing` from the working set, deduplicating by target and
-//! keeping the newest observation per target. Caller-side winnowing (removing
-//! unwanted observations) happens before seal via `helm jettison`.
+//! `seal` builds a `Bearing` from the slate, deduplicating by target and
+//! keeping the newest observation per target. Caller-side pruning (removing
+//! unwanted observations) happens before seal via `helm slate erase`.
 
 use std::path::Path;
 
@@ -23,7 +23,7 @@ pub fn observe(target: &Observe, gh_config_dir: Option<&Path>) -> Observation {
     }
 }
 
-/// Seal a working set of observations into a bearing.
+/// Seal the slate into a bearing.
 ///
 /// Deduplicates by target, keeping the newest observation when the same
 /// target was observed multiple times. Chronological order is preserved
@@ -128,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn seal_empty_working_set() {
+    fn seal_empty_slate() {
         let bearing = seal(vec![], "nothing to see".into());
         assert!(bearing.observations.is_empty());
         assert_eq!(bearing.summary, "nothing to see");

@@ -16,14 +16,14 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Logbook** | Append-only record of a voyage's entries (steer actions, logged states) |
 | **Observation** | What you looked at (`Observe` variant) + what came back (payload) + timestamp |
 | **Bearing** | Sealed observations + summary. Recorded in each log entry on steer/log |
-| **Working set** | Observations accumulating between steer/log commands |
+| **Slate** | Observations accumulating between steer/log commands |
 | **The hold** | Per-voyage content-addressed storage for large payloads |
 
 ### Commands
 
 | Command | What it does | Writes to logbook? |
 |---------|-------------|-------------------|
-| **`helm observe`** | Gather observations into the working set | No |
+| **`helm observe`** | Gather observations into the slate | No |
 | **`helm steer`** | Mutate collaborative state | Yes |
 | **`helm log`** | Record state without mutation | Yes |
 
@@ -34,7 +34,7 @@ Only `steer` and `log` write to the logbook. That's the invariant.
 | Noun | Verb | Example |
 |------|------|---------|
 | **Observation** | observe | "Observe an issue" — look at it, capture what came back |
-| **Bearing** | seal | "Seal a bearing" — seal the working set into a bearing at decision time |
+| **Bearing** | seal | "Seal a bearing" — seal the slate into a bearing at decision time |
 | **Voyage** | start / end | "Start a voyage" / "End a voyage" |
 
 The logbook **records** — that's its job, not the caller's verb. You observe, steer, and log. The logbook captures what happened.
@@ -43,7 +43,7 @@ The logbook **records** — that's its job, not the caller's verb. You observe, 
 
 ### `helm observe`
 
-Gather observations into the working set. Never writes to the logbook. Cheap, frequent, ephemeral.
+Gather observations into the slate. Never writes to the logbook. Cheap, frequent, ephemeral.
 
 An observation has three parts:
 
@@ -59,10 +59,10 @@ Perform an intent-based domain action that mutates collaborative state. One invo
 
 What happens atomically:
 
-1. Seal the working set into a bearing
+1. Seal the slate into a bearing
 2. Perform the action
 3. Record one logbook entry
-4. Clear the working set
+4. Clear the slate
 
 A single steer may perform multiple API calls internally (e.g., post a comment + add a label), but it logs as one semantic action.
 
@@ -99,15 +99,15 @@ Steer actions are typed by semantic intent, not by API call shape. The logbook r
 
 GitHub is the current collaborative boundary. The model supports other boundaries in the future without design changes.
 
-## Working Set and Bearing
+## Slate and Bearing
 
-Observations accumulate in the working set between steer/log commands. When either is called, helm seals the working set into a bearing:
+Observations accumulate in the slate between steer/log commands. When either is called, helm seals the slate into a bearing:
 
 - Deduplicate by target (keep the newest observation when the same thing was observed multiple times)
 - Keep everything since last steer/log
 - Cap by count/size; spill large payloads to the hold
 - Seal into the log entry's bearing
-- Clear the working set
+- Clear the slate
 
 No manual step. The invariant: any command that writes to the logbook seals and clears.
 
@@ -122,7 +122,7 @@ voyage/<id>/hold/<sha256>.zst
 - Small payloads stay inline in observation records.
 - Large payloads get compressed and stored in the hold, referenced by hash.
 - Free deduplication within a voyage — same content, same hash, stored once.
-- Not cleared when the working set clears.
+- Not cleared when the slate clears.
 - Garbage collection of unused hold entries (payloads not referenced by any sealed bearing) can be added later.
 
 ## Example Flow: Advancing an Issue
@@ -136,12 +136,12 @@ Create a voyage with intent.
 ### 2. Observe
 
 Observe the issue, the project structure, relevant source files.
-Each observation lands in the working set. Nothing is logged yet.
+Each observation lands in the slate. Nothing is logged yet.
 
 ### 3. Steer: comment with a plan
 
 Steer to comment on the issue with a proposed plan.
-Helm seals a bearing from the working set, posts the comment, records one logbook entry, clears the working set.
+Helm seals a bearing from the slate, posts the comment, records one logbook entry, clears the slate.
 
 ### 4. Log: waiting
 
@@ -247,7 +247,7 @@ struct Observation {
 ```rust
 /// Orientation at the moment of decision.
 ///
-/// Sealed from the working set when steer or log is called.
+/// Sealed from the slate when steer or log is called.
 /// One bearing per log entry — many observations feed into
 /// one understanding of where you are.
 struct Bearing {
@@ -311,13 +311,13 @@ enum VoyageStatus {
     <uuid>/
       voyage.json
       logbook.jsonl
-      working.jsonl
+      slate.jsonl
       hold/
         <sha256>.zst
 ```
 
 - **logbook.jsonl** — append-only log entries, written by steer and log.
-- **working.jsonl** — observations since last steer/log. Cleared on seal.
+- **slate.jsonl** — observations since last steer/log. Cleared on seal.
 - **hold/** — compressed large payloads, content-addressed by hash.
 
 ## CLI
