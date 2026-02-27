@@ -12,6 +12,7 @@
 
 mod format;
 mod observe;
+mod slate;
 mod target;
 mod voyage;
 
@@ -28,6 +29,7 @@ use crate::{
     storage::Storage,
 };
 
+use slate::SlateCommand;
 use target::ObserveTarget;
 use voyage::VoyageCommand;
 
@@ -57,6 +59,12 @@ pub enum Command {
     Voyage {
         #[command(subcommand)]
         command: VoyageCommand,
+    },
+
+    /// Inspect and manage the slate for a voyage.
+    Slate {
+        #[command(subcommand)]
+        command: SlateCommand,
     },
 
     /// Observe the world and add to the slate.
@@ -161,6 +169,16 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             VoyageCommand::End { voyage, status } => {
                 let voyage = resolve_voyage(storage, &voyage)?;
                 voyage::cmd_end(storage, &voyage, status.as_deref())
+            }
+        },
+        Command::Slate { command } => match command {
+            SlateCommand::List { voyage } => {
+                let voyage = resolve_voyage(storage, &voyage)?;
+                slate::cmd_list(storage, &voyage)
+            }
+            SlateCommand::Clear { voyage } => {
+                let voyage = resolve_voyage(storage, &voyage)?;
+                slate::cmd_clear(storage, &voyage)
             }
         },
         Command::Observe {
@@ -334,7 +352,7 @@ fn describe_steer_action(action: &SteerAction) -> String {
 }
 
 /// Resolve a voyage reference (full UUID or unambiguous prefix) to a voyage.
-fn resolve_voyage(storage: &Storage, reference: &str) -> Result<Voyage, String> {
+pub(super) fn resolve_voyage(storage: &Storage, reference: &str) -> Result<Voyage, String> {
     // Try full UUID first.
     if let Ok(id) = reference.parse::<Uuid>() {
         return storage
