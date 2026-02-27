@@ -574,12 +574,13 @@ helm observe rust-project <path>
 
 helm record <voyage-id> --reading <text> [--observation <file>...]
 
-helm act <voyage-id> --as <identity> <act-subcommand>
+helm act <voyage-id> --as <identity> [--dry-run] <act-subcommand>
 ```
 
 `helm observe` outputs JSON to stdout or `--out <file>`.
 `helm record` reads observations from `--observation` files or stdin.
 `helm act` performs the operation and records it in the logbook.
+`--dry-run` shows what would be done without performing it.
 
 ## Open Questions
 

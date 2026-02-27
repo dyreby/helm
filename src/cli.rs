@@ -109,6 +109,11 @@ pub enum Command {
     /// and the identity that performed it. The logbook captures what happened,
     /// not what was planned — failed operations are not recorded.
     ///
+    /// With `--dry-run`, prints what would be done to stdout and exits.
+    /// No operation is performed, no identity is validated, no logbook
+    /// entry is written. The plan output goes to stdout (pipeable);
+    /// normal action confirmations go to stderr.
+    ///
     /// Identity selects which GitHub account to use for `gh` commands.
     /// Git operations use ambient git config.
     Act {
@@ -119,6 +124,10 @@ pub enum Command {
         /// Selects the GitHub config directory for `gh` commands.
         #[arg(long = "as")]
         identity: String,
+
+        /// Show what would be done without performing it.
+        #[arg(long)]
+        dry_run: bool,
 
         /// The act to perform.
         #[command(subcommand)]
@@ -339,8 +348,9 @@ pub fn run(storage: &Storage) -> Result<(), String> {
         Command::Act {
             voyage,
             identity,
+            dry_run,
             act,
-        } => cmd_act(storage, &voyage, &identity, &act),
+        } => cmd_act(storage, &voyage, &identity, dry_run, &act),
     }
 }
 
@@ -482,6 +492,7 @@ fn cmd_act(
     storage: &Storage,
     voyage_ref: &str,
     identity: &str,
+    dry_run: bool,
     act_cmd: &ActCommand,
 ) -> Result<(), String> {
     let voyage = resolve_voyage(storage, voyage_ref)?;
@@ -491,6 +502,15 @@ fn cmd_act(
             "voyage {} is already completed",
             &voyage.id.to_string()[..8]
         ));
+    }
+
+    let short_id = &voyage.id.to_string()[..8];
+
+    if dry_run {
+        println!("Would perform on voyage {short_id}:");
+        println!("  as: {identity}");
+        println!("  {}", format_plan(act_cmd));
+        return Ok(());
     }
 
     let gh_config = gh_config_dir(identity)?;
@@ -507,7 +527,6 @@ fn cmd_act(
         .append_entry(voyage.id, &LogbookEntry::Action(action.clone()))
         .map_err(|e| format!("failed to save action: {e}"))?;
 
-    let short_id = &voyage.id.to_string()[..8];
     eprintln!("Action recorded for voyage {short_id}");
     eprintln!("  as: {identity}");
     eprintln!("  {}", format_act(&action.kind));
@@ -817,6 +836,34 @@ fn parse_issue_number_from_url(url: &str) -> Result<u64, String> {
 }
 
 /// Format an act for human-readable display.
+/// Describe what an act command *would* do, before performing it.
+fn format_plan(act_cmd: &ActCommand) -> String {
+    match act_cmd {
+        ActCommand::Commit { message } => format!("commit with message: {message}"),
+        ActCommand::Push { branch } => format!("push to {branch}"),
+        ActCommand::CreatePullRequest {
+            branch,
+            title,
+            base,
+            ..
+        } => format!("create PR: \"{title}\" ({branch} → {base})"),
+        ActCommand::MergePullRequest { number } => format!("merge PR #{number} (squash)"),
+        ActCommand::CommentOnPullRequest { number, .. } => format!("comment on PR #{number}"),
+        ActCommand::ReplyOnPullRequest {
+            number,
+            comment_id,
+            ..
+        } => format!("reply to comment {comment_id} on PR #{number}"),
+        ActCommand::RequestReview { number, reviewer } => {
+            format!("request review on PR #{number} from {}", reviewer.join(", "))
+        }
+        ActCommand::CreateIssue { title, .. } => format!("create issue: \"{title}\""),
+        ActCommand::CloseIssue { number } => format!("close issue #{number}"),
+        ActCommand::CommentOnIssue { number, .. } => format!("comment on issue #{number}"),
+    }
+}
+
+/// Format a completed action for human-readable display.
 fn format_act(act: &ActionKind) -> String {
     match act {
         ActionKind::Commit { sha } => {
@@ -1041,5 +1088,54 @@ mod tests {
             };
             assert_eq!(format_act(&kind), expected);
         }
+    }
+
+    #[test]
+    fn format_plan_commit() {
+        let cmd = ActCommand::Commit {
+            message: "fix bug".to_string(),
+        };
+        assert_eq!(format_plan(&cmd), "commit with message: fix bug");
+    }
+
+    #[test]
+    fn format_plan_push() {
+        let cmd = ActCommand::Push {
+            branch: "fix-widget".to_string(),
+        };
+        assert_eq!(format_plan(&cmd), "push to fix-widget");
+    }
+
+    #[test]
+    fn format_plan_create_pr() {
+        let cmd = ActCommand::CreatePullRequest {
+            branch: "fix-widget".to_string(),
+            title: "Fix widget crash".to_string(),
+            body: None,
+            base: "main".to_string(),
+            reviewer: vec!["dyreby".to_string()],
+        };
+        assert_eq!(
+            format_plan(&cmd),
+            "create PR: \"Fix widget crash\" (fix-widget → main)"
+        );
+    }
+
+    #[test]
+    fn format_plan_merge_pr() {
+        let cmd = ActCommand::MergePullRequest { number: 45 };
+        assert_eq!(format_plan(&cmd), "merge PR #45 (squash)");
+    }
+
+    #[test]
+    fn format_plan_request_review() {
+        let cmd = ActCommand::RequestReview {
+            number: 45,
+            reviewer: vec!["alice".to_string(), "bob".to_string()],
+        };
+        assert_eq!(
+            format_plan(&cmd),
+            "request review on PR #45 from alice, bob"
+        );
     }
 }
