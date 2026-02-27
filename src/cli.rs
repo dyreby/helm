@@ -7,11 +7,11 @@
 //!
 //! - `helm voyage` — lifecycle commands grouped under the domain concept.
 //! - `helm observe`, `helm record` — flat verbs, unambiguous on their own.
-//! - `helm act` — record an action that changed the world.
+//! - `helm act` — perform and record an action.
 //!
 //! Observing outputs an observation (mark + sighting) to stdout or a file.
 //! Recording selects observations, attaches a reading, and writes the bearing to the logbook.
-//! Acting executes git/GitHub operations and records them in the logbook.
+//! Acting performs git/GitHub operations and records them in the logbook.
 
 use std::path::PathBuf;
 use std::{fs, io, process};
@@ -47,7 +47,7 @@ Stopping mid-voyage? Record a bearing so the next session has context:
   helm observe rust-project . --out obs.json
   helm record a3b --reading "Halfway through, refactoring widget module" --observation obs.json
 
-Record actions that change the world:
+Record actions:
   helm act a3b --as john-agent commit --message "Fix null check in widget init"
   helm act a3b --as john-agent push --branch fix-widget
   helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget"
@@ -103,7 +103,7 @@ pub enum Command {
         observation: Vec<PathBuf>,
     },
 
-    /// Record an action: something that changed the world.
+    /// Perform an action.
     ///
     /// Each action records a single act (push, create PR, merge, comment, etc.)
     /// and the identity that performed it. The logbook captures what happened,

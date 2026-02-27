@@ -19,7 +19,7 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Mark** | What you pointed the spyglass at — a domain of observable reality | `Mark` |
 | **Sighting** | The raw data returned when observing a mark | `Sighting` |
 | **Reading** | Short interpretation of what was observed — the logbook's narrative voice | `Reading` |
-| **Action** | Something that changed the world, recorded after the fact | `Action` |
+| **Action** | An operation Helm performed | `Action` |
 | **Action kind** | The specific thing that was done (push, create PR, comment) | `ActionKind` |
 
 Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
@@ -119,7 +119,7 @@ Action recorded for voyage a3b0fc12
   created PR #45
 ```
 
-Each act executes the operation *and* records it. The logbook now has three `LogbookEntry::Action` entries.
+Each act performs the operation *and* records it. The logbook now has three `LogbookEntry::Action` entries.
 
 ### 5. Complete the voyage
 
@@ -395,7 +395,7 @@ enum ReadingSource {
 ### Action
 
 ```rust
-/// A single, immutable record of something that changed the world.
+/// A single, immutable record of an operation Helm performed.
 ///
 /// Only successful operations are recorded — the logbook captures
 /// what happened, not what was attempted.
@@ -572,7 +572,7 @@ helm act <voyage-id> --as <identity> <act-subcommand>
 
 `helm observe` outputs JSON to stdout or `--out <file>`.
 `helm record` reads observations from `--observation` files or stdin.
-`helm act` executes the operation and records it in the logbook.
+`helm act` performs the operation and records it in the logbook.
 
 ## Open Questions
 
