@@ -1,5 +1,6 @@
 mod bearing;
 mod cli;
+mod identity;
 mod model;
 mod observe;
 mod steer;

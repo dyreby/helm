@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::{
     bearing,
+    identity,
     model::{CommentTarget, EntryKind, LogbookEntry, Steer, Voyage},
     steer,
     storage::Storage,
@@ -101,8 +102,10 @@ pub enum Command {
         voyage: String,
 
         /// Who is steering (e.g. `dyreby`).
+        ///
+        /// Falls back to `HELM_IDENTITY` env var, then `~/.helm/config.toml`.
         #[arg(long = "as")]
-        identity: String,
+        identity: Option<String>,
 
         /// Why you're steering — orientation for the logbook entry.
         #[arg(long)]
@@ -122,8 +125,10 @@ pub enum Command {
         voyage: String,
 
         /// Who is logging (e.g. `dyreby`).
+        ///
+        /// Falls back to `HELM_IDENTITY` env var, then `~/.helm/config.toml`.
         #[arg(long = "as")]
-        identity: String,
+        identity: Option<String>,
 
         /// Why you're logging — orientation for the logbook entry.
         #[arg(long)]
@@ -197,6 +202,7 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             action,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
+            let identity = identity::resolve_identity(identity.as_deref())?;
             cmd_steer(storage, &voyage, &identity, &summary, &action)
         }
         Command::Log {
@@ -206,6 +212,7 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             status,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
+            let identity = identity::resolve_identity(identity.as_deref())?;
             cmd_log(storage, &voyage, &identity, &summary, &status)
         }
     }
