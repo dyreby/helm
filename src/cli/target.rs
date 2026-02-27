@@ -8,9 +8,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Subcommand, ValueEnum};
-
-use crate::model::PullRequestFocus;
+use clap::Subcommand;
 
 /// What helm can observe.
 ///
@@ -49,17 +47,11 @@ pub enum ObserveTarget {
 
     /// Observe a GitHub pull request.
     ///
-    /// `summary` fetches metadata and comments.
-    /// `full` fetches everything: metadata, comments, diff, files, checks, and inline reviews.
-    /// Defaults to summary when `--focus` is not specified.
+    /// Always fetches everything: metadata, comments, diff, files, checks, and inline reviews.
     #[command(name = "github-pr")]
     GitHubPullRequest {
         /// PR number.
         number: u64,
-
-        /// How much to fetch.
-        #[arg(long, value_enum, default_value_t = PrFocusArg::Summary)]
-        focus: PrFocusArg,
     },
 
     /// Observe a GitHub issue.
@@ -78,20 +70,4 @@ pub enum ObserveTarget {
     GitHubRepository,
 }
 
-/// CLI-facing PR focus, mapped to the domain `PullRequestFocus`.
-#[derive(Debug, Clone, ValueEnum)]
-pub enum PrFocusArg {
-    /// PR metadata and comments.
-    Summary,
-    /// Everything: metadata, comments, diff, files, checks, and inline reviews.
-    Full,
-}
 
-impl PrFocusArg {
-    pub(crate) fn to_domain(&self) -> PullRequestFocus {
-        match self {
-            Self::Summary => PullRequestFocus::Summary,
-            Self::Full => PullRequestFocus::Full,
-        }
-    }
-}

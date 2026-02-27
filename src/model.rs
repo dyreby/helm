@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 pub use bearing::Bearing;
 pub use observation::Observation;
-pub use observe::{Observe, PullRequestFocus};
+pub use observe::Observe;
 pub use payload::{
     CheckRun, DirectoryEntry, DirectoryListing, FileContent, FileContents, GitHubComment,
     GitHubIssueSummary, GitHubPullRequestSummary, GitHubSummary, IssuePayload, Payload,
