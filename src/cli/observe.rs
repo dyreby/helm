@@ -3,7 +3,7 @@
 use std::{fs, path::PathBuf};
 
 use crate::{
-    bearing,
+    bearing, identity,
     model::{Observe, Voyage},
     storage::Storage,
 };
@@ -54,8 +54,8 @@ pub(super) fn cmd_observe(
     };
 
     let gh_config = if needs_gh {
-        let id = identity.ok_or("GitHub observations require --as <identity>".to_string())?;
-        Some(super::gh_config_dir(id)?)
+        let id = identity::resolve_identity(identity)?;
+        Some(super::gh_config_dir(&id)?)
     } else {
         None
     };

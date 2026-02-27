@@ -23,7 +23,7 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{
-    bearing,
+    bearing, identity,
     model::{CommentTarget, EntryKind, LogbookEntry, Steer, Voyage},
     steer,
     storage::Storage,
@@ -47,6 +47,10 @@ const WORKFLOW_HELP: &str = r#"Workflow: advancing an issue
   2. helm observe --voyage a3b --as dyreby github-issue 42
   3. helm steer --voyage a3b --as dyreby --summary "Plan looks good" comment --issue 42 --body "Here's my plan: ..."
   4. helm voyage end --voyage a3b --status "Merged PR #45"
+
+Identity (--as):
+  --as is optional when identity is configured elsewhere.
+  Resolution order: --as flag → HELM_IDENTITY env var → ~/.helm/config.toml
 
 Observe:
   helm observe --voyage a3b --as dyreby file-contents --read src/widget.rs
@@ -72,14 +76,15 @@ pub enum Command {
     /// Pure read, no side effects, repeatable.
     /// The observation JSON is written to `--out` (if given) or stdout.
     /// A human-readable summary is printed to stderr when writing to a file.
-    /// GitHub observations require `--as`.
+    /// GitHub observations require identity (`--as`, `HELM_IDENTITY`, or `~/.helm/config.toml`).
     Observe {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
         #[arg(long)]
         voyage: String,
 
         /// Identity to use for GitHub auth (e.g. `dyreby`).
-        /// Required for GitHub observations; ignored for local observations.
+        /// Falls back to `HELM_IDENTITY` env var, then `~/.helm/config.toml`.
+        /// Ignored for local observations.
         #[arg(long = "as")]
         identity: Option<String>,
 
@@ -101,8 +106,10 @@ pub enum Command {
         voyage: String,
 
         /// Who is steering (e.g. `dyreby`).
+        ///
+        /// Falls back to `HELM_IDENTITY` env var, then `~/.helm/config.toml`.
         #[arg(long = "as")]
-        identity: String,
+        identity: Option<String>,
 
         /// Why you're steering — orientation for the logbook entry.
         #[arg(long)]
@@ -122,8 +129,10 @@ pub enum Command {
         voyage: String,
 
         /// Who is logging (e.g. `dyreby`).
+        ///
+        /// Falls back to `HELM_IDENTITY` env var, then `~/.helm/config.toml`.
         #[arg(long = "as")]
-        identity: String,
+        identity: Option<String>,
 
         /// Why you're logging — orientation for the logbook entry.
         #[arg(long)]
@@ -184,11 +193,12 @@ pub fn run(storage: &Storage) -> Result<(), String> {
         Command::Observe {
             voyage,
             identity,
-            ref target,
+            target,
             out,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
-            observe::cmd_observe(storage, &voyage, identity.as_deref(), target, out)
+            // Identity is resolved lazily inside cmd_observe — local targets don't require it.
+            observe::cmd_observe(storage, &voyage, identity.as_deref(), &target, out)
         }
         Command::Steer {
             voyage,
@@ -197,6 +207,7 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             action,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
+            let identity = identity::resolve_identity(identity.as_deref())?;
             cmd_steer(storage, &voyage, &identity, &summary, &action)
         }
         Command::Log {
@@ -206,6 +217,7 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             status,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
+            let identity = identity::resolve_identity(identity.as_deref())?;
             cmd_log(storage, &voyage, &identity, &summary, &status)
         }
     }
