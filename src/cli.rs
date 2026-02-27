@@ -84,7 +84,8 @@ pub enum Command {
         voyage: String,
 
         /// Identity to use for GitHub auth (e.g. `dyreby`).
-        /// Required for GitHub observations; ignored for local observations.
+        /// Falls back to `HELM_IDENTITY` env var, then `~/.helm/config.toml`.
+        /// Ignored for local observations.
         #[arg(long = "as")]
         identity: Option<String>,
 
