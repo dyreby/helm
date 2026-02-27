@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::model::{
-    Action, ActionKind, IssueAction, LogbookEntry, Mark, Observation, PullRequestAction, Voyage,
-    VoyageKind, VoyageStatus,
+    Action, ActionKind, IssueAction, IssueFocus, LogbookEntry, Mark, Observation,
+    PullRequestAction, PullRequestFocus, RepositoryFocus, Voyage, VoyageKind, VoyageStatus,
 };
 use crate::{bearing, storage::Storage};
 
@@ -50,6 +50,11 @@ const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
 Stopping mid-voyage? Record a bearing so the next session has context:
   helm --voyage a3b observe rust-project . --out obs.json
   helm --voyage a3b record --reading "Halfway through, refactoring widget module" --observation obs.json
+
+Observe GitHub:
+  helm --voyage a3b observe github-pr 42 --focus summary --focus diff
+  helm --voyage a3b observe github-issue 10 --focus comments
+  helm --voyage a3b observe github-repo --focus issues
 
 Record actions:
   helm --voyage a3b act commit --message "Fix null check in widget init"
@@ -311,6 +316,111 @@ pub enum ObserveSource {
         #[arg(long)]
         read: Vec<PathBuf>,
     },
+
+    /// Observe a GitHub pull request.
+    ///
+    /// Fetches PR metadata, diff, comments, reviews, checks, or changed files.
+    /// Defaults to summary when no `--focus` is specified.
+    #[command(name = "github-pr")]
+    GitHubPullRequest {
+        /// PR number.
+        number: u64,
+
+        /// What to observe. Can be specified multiple times.
+        #[arg(long, value_enum)]
+        focus: Vec<PrFocusArg>,
+    },
+
+    /// Observe a GitHub issue.
+    ///
+    /// Fetches issue metadata or comments.
+    /// Defaults to summary when no `--focus` is specified.
+    #[command(name = "github-issue")]
+    GitHubIssue {
+        /// Issue number.
+        number: u64,
+
+        /// What to observe. Can be specified multiple times.
+        #[arg(long, value_enum)]
+        focus: Vec<IssueFocusArg>,
+    },
+
+    /// Observe a GitHub repository.
+    ///
+    /// Lists open issues, pull requests, or both.
+    /// Defaults to both when no `--focus` is specified.
+    #[command(name = "github-repo")]
+    GitHubRepository {
+        /// What to observe. Can be specified multiple times.
+        #[arg(long, value_enum)]
+        focus: Vec<RepoFocusArg>,
+    },
+}
+
+/// CLI-facing PR focus, mapped to the domain `PullRequestFocus`.
+#[derive(Debug, Clone, ValueEnum)]
+pub enum PrFocusArg {
+    /// PR metadata: title, state, author, labels, assignees.
+    Summary,
+    /// Changed file paths.
+    Files,
+    /// CI check status.
+    Checks,
+    /// Full diff.
+    Diff,
+    /// Top-level PR comments.
+    Comments,
+    /// Inline review comments with threads.
+    Reviews,
+}
+
+impl PrFocusArg {
+    fn to_domain(&self) -> PullRequestFocus {
+        match self {
+            Self::Summary => PullRequestFocus::Summary,
+            Self::Files => PullRequestFocus::Files,
+            Self::Checks => PullRequestFocus::Checks,
+            Self::Diff => PullRequestFocus::Diff,
+            Self::Comments => PullRequestFocus::Comments,
+            Self::Reviews => PullRequestFocus::Reviews,
+        }
+    }
+}
+
+/// CLI-facing issue focus, mapped to the domain `IssueFocus`.
+#[derive(Debug, Clone, ValueEnum)]
+pub enum IssueFocusArg {
+    /// Issue metadata: title, state, author, labels, assignees.
+    Summary,
+    /// Issue comments.
+    Comments,
+}
+
+impl IssueFocusArg {
+    fn to_domain(&self) -> IssueFocus {
+        match self {
+            Self::Summary => IssueFocus::Summary,
+            Self::Comments => IssueFocus::Comments,
+        }
+    }
+}
+
+/// CLI-facing repository focus, mapped to the domain `RepositoryFocus`.
+#[derive(Debug, Clone, ValueEnum)]
+pub enum RepoFocusArg {
+    /// Open issues.
+    Issues,
+    /// Open pull requests.
+    PullRequests,
+}
+
+impl RepoFocusArg {
+    fn to_domain(&self) -> RepositoryFocus {
+        match self {
+            Self::Issues => RepositoryFocus::Issues,
+            Self::PullRequests => RepositoryFocus::PullRequests,
+        }
+    }
 }
 
 /// Run the CLI, returning an error message on failure.
@@ -418,20 +528,49 @@ fn cmd_observe(
     source: &ObserveSource,
     out: Option<PathBuf>,
 ) -> Result<(), String> {
-    let mark = match source {
-        ObserveSource::RustProject { path } => Mark::RustProject { root: path.clone() },
+    let (mark, needs_gh) = match source {
+        ObserveSource::RustProject { path } => (Mark::RustProject { root: path.clone() }, false),
         ObserveSource::Files { list, read } => {
             if list.is_empty() && read.is_empty() {
                 return Err("specify at least one --list or --read".to_string());
             }
-            Mark::Files {
-                list: list.clone(),
-                read: read.clone(),
-            }
+            (
+                Mark::Files {
+                    list: list.clone(),
+                    read: read.clone(),
+                },
+                false,
+            )
         }
+        ObserveSource::GitHubPullRequest { number, focus } => (
+            Mark::GitHubPullRequest {
+                number: *number,
+                focus: focus.iter().map(PrFocusArg::to_domain).collect(),
+            },
+            true,
+        ),
+        ObserveSource::GitHubIssue { number, focus } => (
+            Mark::GitHubIssue {
+                number: *number,
+                focus: focus.iter().map(IssueFocusArg::to_domain).collect(),
+            },
+            true,
+        ),
+        ObserveSource::GitHubRepository { focus } => (
+            Mark::GitHubRepository {
+                focus: focus.iter().map(RepoFocusArg::to_domain).collect(),
+            },
+            true,
+        ),
     };
 
-    let observation = bearing::observe(&mark);
+    let gh_config = if needs_gh {
+        Some(gh_config_dir(&voyage.identity)?)
+    } else {
+        None
+    };
+
+    let observation = bearing::observe(&mark, gh_config.as_deref());
 
     let json = serde_json::to_string_pretty(&observation)
         .map_err(|e| format!("failed to serialize observation: {e}"))?;
@@ -446,9 +585,6 @@ fn cmd_observe(
             println!("{json}");
         }
     }
-
-    // Suppress unused variable warning until GitHub observation uses the voyage identity.
-    let _ = voyage;
 
     Ok(())
 }
@@ -868,6 +1004,52 @@ fn format_act(act: &ActionKind) -> String {
     }
 }
 
+fn format_pr_focuses(focuses: &[PullRequestFocus]) -> String {
+    if focuses.is_empty() {
+        return "summary".to_string();
+    }
+    focuses
+        .iter()
+        .map(|f| match f {
+            PullRequestFocus::Summary => "summary",
+            PullRequestFocus::Files => "files",
+            PullRequestFocus::Checks => "checks",
+            PullRequestFocus::Diff => "diff",
+            PullRequestFocus::Comments => "comments",
+            PullRequestFocus::Reviews => "reviews",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_issue_focuses(focuses: &[IssueFocus]) -> String {
+    if focuses.is_empty() {
+        return "summary".to_string();
+    }
+    focuses
+        .iter()
+        .map(|f| match f {
+            IssueFocus::Summary => "summary",
+            IssueFocus::Comments => "comments",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_repo_focuses(focuses: &[RepositoryFocus]) -> String {
+    if focuses.is_empty() {
+        return "issues, pull requests".to_string();
+    }
+    focuses
+        .iter()
+        .map(|f| match f {
+            RepositoryFocus::Issues => "issues",
+            RepositoryFocus::PullRequests => "pull requests",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn cmd_log(storage: &Storage, voyage: &Voyage) -> Result<(), String> {
     println!("Voyage: {}", voyage.intent);
     println!("Identity: {}", voyage.identity);
@@ -912,6 +1094,18 @@ fn cmd_log(storage: &Storage, voyage: &Voyage) -> Result<(), String> {
                         }
                         Mark::RustProject { root } => {
                             println!("  Mark: RustProject @ {}", root.display());
+                        }
+                        Mark::GitHubPullRequest { number, focus } => {
+                            let focuses = format_pr_focuses(focus);
+                            println!("  Mark: GitHub PR #{number} [{focuses}]");
+                        }
+                        Mark::GitHubIssue { number, focus } => {
+                            let focuses = format_issue_focuses(focus);
+                            println!("  Mark: GitHub Issue #{number} [{focuses}]");
+                        }
+                        Mark::GitHubRepository { focus } => {
+                            let focuses = format_repo_focuses(focus);
+                            println!("  Mark: GitHub Repository [{focuses}]");
                         }
                     }
                 }

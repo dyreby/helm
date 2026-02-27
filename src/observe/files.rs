@@ -112,7 +112,9 @@ mod tests {
         let list = vec![dir.path().to_path_buf()];
 
         let obs = observe_files(&list, &Vec::<PathBuf>::new());
-        let Sighting::Files { listings, contents } = obs;
+        let Sighting::Files { listings, contents } = obs else {
+            unreachable!()
+        };
 
         assert_eq!(listings.len(), 1);
         assert!(contents.is_empty());
@@ -129,7 +131,9 @@ mod tests {
         let dir = setup_test_dir();
         let list = vec![dir.path().to_path_buf()];
 
-        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new());
+        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new()) else {
+            unreachable!()
+        };
         let listing = &listings[0];
 
         let hello = listing
@@ -157,7 +161,9 @@ mod tests {
     fn list_nonexistent_directory_returns_empty_entries() {
         let list = vec![PathBuf::from("/nonexistent/path/that/should/not/exist")];
 
-        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new());
+        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new()) else {
+            unreachable!()
+        };
         assert_eq!(listings.len(), 1);
         assert_eq!(
             listings[0].path,
@@ -171,7 +177,9 @@ mod tests {
         let dir = setup_test_dir();
         let list = vec![dir.path().to_path_buf(), dir.path().join("subdir")];
 
-        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new());
+        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new()) else {
+            unreachable!()
+        };
         assert_eq!(listings.len(), 2);
 
         // First directory has 3 entries.
@@ -187,7 +195,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let list = vec![dir.path().to_path_buf()];
 
-        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new());
+        let Sighting::Files { listings, .. } = observe_files(&list, &Vec::<PathBuf>::new()) else {
+            unreachable!()
+        };
         assert_eq!(listings.len(), 1);
         assert!(listings[0].entries.is_empty());
     }
@@ -200,7 +210,10 @@ mod tests {
         fs::write(dir.path().join("middle.txt"), "m").unwrap();
 
         let Sighting::Files { listings, .. } =
-            observe_files(&[dir.path().to_path_buf()], &Vec::<PathBuf>::new());
+            observe_files(&[dir.path().to_path_buf()], &Vec::<PathBuf>::new())
+        else {
+            unreachable!()
+        };
 
         let names: Vec<&str> = listings[0]
             .entries
@@ -217,7 +230,9 @@ mod tests {
         let dir = setup_test_dir();
         let read = vec![dir.path().join("hello.txt")];
 
-        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read);
+        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read) else {
+            unreachable!()
+        };
 
         assert_eq!(contents.len(), 1);
         assert_eq!(contents[0].path, read[0]);
@@ -231,7 +246,9 @@ mod tests {
         let dir = setup_test_dir();
         let read = vec![dir.path().join("empty.txt")];
 
-        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read);
+        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read) else {
+            unreachable!()
+        };
 
         assert!(matches!(&contents[0].content, FileContent::Text { content: s } if s.is_empty()));
     }
@@ -245,7 +262,9 @@ mod tests {
 
         let read = vec![binary_path.clone()];
 
-        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read);
+        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read) else {
+            unreachable!()
+        };
 
         assert_eq!(contents.len(), 1);
         assert!(matches!(
@@ -258,7 +277,9 @@ mod tests {
     fn read_nonexistent_file_returns_error() {
         let read = vec![PathBuf::from("/nonexistent/file.txt")];
 
-        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read);
+        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read) else {
+            unreachable!()
+        };
 
         assert_eq!(contents.len(), 1);
         assert!(matches!(&contents[0].content, FileContent::Error { .. }));
@@ -273,7 +294,9 @@ mod tests {
 
         let read = vec![path.clone()];
 
-        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read);
+        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read) else {
+            unreachable!()
+        };
 
         assert!(matches!(&contents[0].content, FileContent::Error { .. }));
 
@@ -290,7 +313,9 @@ mod tests {
             dir.path().join("subdir").join("nested.txt"),
         ];
 
-        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read);
+        let Sighting::Files { contents, .. } = observe_files(&Vec::<PathBuf>::new(), &read) else {
+            unreachable!()
+        };
 
         assert_eq!(contents.len(), 3);
         assert!(
@@ -308,7 +333,9 @@ mod tests {
         let list = vec![dir.path().to_path_buf()];
         let read = vec![dir.path().join("hello.txt")];
 
-        let Sighting::Files { listings, contents } = observe_files(&list, &read);
+        let Sighting::Files { listings, contents } = observe_files(&list, &read) else {
+            unreachable!()
+        };
 
         assert_eq!(listings.len(), 1);
         assert_eq!(listings[0].entries.len(), 3);
@@ -322,7 +349,10 @@ mod tests {
     #[test]
     fn empty_list_and_read() {
         let Sighting::Files { listings, contents } =
-            observe_files(&Vec::<PathBuf>::new(), &Vec::<PathBuf>::new());
+            observe_files(&Vec::<PathBuf>::new(), &Vec::<PathBuf>::new())
+        else {
+            unreachable!()
+        };
 
         assert!(listings.is_empty());
         assert!(contents.is_empty());
@@ -338,7 +368,7 @@ mod tests {
             read: vec![dir.path().join("hello.txt")],
         };
 
-        let sighting = crate::observe::observe(&mark);
+        let sighting = crate::observe::observe(&mark, None);
         assert!(matches!(sighting, Sighting::Files { .. }));
     }
 }

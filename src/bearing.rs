@@ -11,14 +11,17 @@
 //! The bearing records marks and observation references — lightweight,
 //! always in the logbook.
 
+use std::path::Path;
+
 use crate::model::{Bearing, Mark, Observation, Reading};
 
 /// Take a single observation: look at a mark and record what was seen.
 ///
 /// Returns a self-contained `Observation` with its own timestamp.
 /// The caller decides whether to include it in a bearing or discard it.
-pub fn observe(mark: &Mark) -> Observation {
-    let sighting = crate::observe::observe(mark);
+/// GitHub marks require `gh_config_dir` for authentication.
+pub fn observe(mark: &Mark, gh_config_dir: Option<&Path>) -> Observation {
+    let sighting = crate::observe::observe(mark, gh_config_dir);
 
     Observation {
         mark: mark.clone(),
@@ -79,14 +82,13 @@ mod tests {
         };
 
         // Step 1: observe.
-        let observation = observe(&mark);
+        let observation = observe(&mark, None);
 
-        match &observation.sighting {
-            Sighting::Files { listings, contents } => {
-                assert_eq!(listings.len(), 1);
-                assert_eq!(contents.len(), 1);
-            }
-        }
+        let Sighting::Files { listings, contents } = &observation.sighting else {
+            unreachable!()
+        };
+        assert_eq!(listings.len(), 1);
+        assert_eq!(contents.len(), 1);
 
         // Step 2: record with reading.
         let bearing =
@@ -102,15 +104,21 @@ mod tests {
         fs::write(dir.path().join("a.txt"), "aaa").unwrap();
         fs::write(dir.path().join("b.txt"), "bbb").unwrap();
 
-        let obs1 = observe(&Mark::Files {
-            list: vec![dir.path().to_path_buf()],
-            read: vec![],
-        });
+        let obs1 = observe(
+            &Mark::Files {
+                list: vec![dir.path().to_path_buf()],
+                read: vec![],
+            },
+            None,
+        );
 
-        let obs2 = observe(&Mark::Files {
-            list: vec![],
-            read: vec![dir.path().join("a.txt")],
-        });
+        let obs2 = observe(
+            &Mark::Files {
+                list: vec![],
+                read: vec![dir.path().join("a.txt")],
+            },
+            None,
+        );
 
         let bearing = record_bearing(
             &[obs1, obs2],
@@ -132,10 +140,13 @@ mod tests {
     #[test]
     fn rejects_empty_reading() {
         let dir = TempDir::new().unwrap();
-        let observation = observe(&Mark::Files {
-            list: vec![dir.path().to_path_buf()],
-            read: vec![],
-        });
+        let observation = observe(
+            &Mark::Files {
+                list: vec![dir.path().to_path_buf()],
+                read: vec![],
+            },
+            None,
+        );
 
         let err = record_bearing(&[observation], vec![1], "  ".to_string()).unwrap_err();
         assert_eq!(err, "reading text cannot be empty");
@@ -146,16 +157,22 @@ mod tests {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("a.txt"), "aaa").unwrap();
 
-        let keep = observe(&Mark::Files {
-            list: vec![dir.path().to_path_buf()],
-            read: vec![],
-        });
+        let keep = observe(
+            &Mark::Files {
+                list: vec![dir.path().to_path_buf()],
+                read: vec![],
+            },
+            None,
+        );
 
         // Take another observation but don't include it.
-        let _discard = observe(&Mark::Files {
-            list: vec![],
-            read: vec![dir.path().join("a.txt")],
-        });
+        let _discard = observe(
+            &Mark::Files {
+                list: vec![],
+                read: vec![dir.path().join("a.txt")],
+            },
+            None,
+        );
 
         let bearing =
             record_bearing(&[keep], vec![1], "Only the survey matters.".to_string()).unwrap();

@@ -15,7 +15,10 @@ pub use action::{Action, ActionKind, IssueAction, PullRequestAction};
 pub use bearing::Bearing;
 pub use reading::Reading;
 pub use source::{
-    DirectoryEntry, DirectoryListing, FileContent, FileContents, Mark, Observation, Sighting,
+    CheckRun, DirectoryEntry, DirectoryListing, FileContent, FileContents, GitHubComment,
+    GitHubIssueSummary, GitHubPullRequestSummary, GitHubSummary, IssueFocus, IssueSighting, Mark,
+    Observation, PullRequestFocus, PullRequestSighting, RepositoryFocus, RepositorySighting,
+    ReviewComment, Sighting,
 };
 pub use voyage::{Voyage, VoyageKind, VoyageStatus};
 

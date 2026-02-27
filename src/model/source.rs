@@ -50,6 +50,72 @@ pub enum Mark {
     /// Lists the full directory tree with metadata.
     /// Reads documentation files (everything else is left for targeted `Files` queries).
     RustProject { root: PathBuf },
+
+    /// A GitHub pull request.
+    ///
+    /// Focus controls depth: summary for metadata,
+    /// diff/comments/reviews/checks/files for details.
+    /// Defaults to summary when no focus is specified.
+    GitHubPullRequest {
+        number: u64,
+        focus: Vec<PullRequestFocus>,
+    },
+
+    /// A GitHub issue.
+    ///
+    /// Focus controls depth: summary for metadata, comments for discussion.
+    /// Defaults to summary when no focus is specified.
+    GitHubIssue { number: u64, focus: Vec<IssueFocus> },
+
+    /// A GitHub repository.
+    ///
+    /// Lists open issues, pull requests, or both.
+    GitHubRepository { focus: Vec<RepositoryFocus> },
+}
+
+/// What to observe about a pull request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PullRequestFocus {
+    /// PR metadata: title, state, author, labels, assignees.
+    Summary,
+
+    /// Changed file paths.
+    Files,
+
+    /// CI check status.
+    Checks,
+
+    /// Full diff.
+    Diff,
+
+    /// Top-level PR comments.
+    Comments,
+
+    /// Inline review comments with threads.
+    Reviews,
+}
+
+/// What to observe about an issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IssueFocus {
+    /// Issue metadata: title, state, author, labels, assignees.
+    Summary,
+
+    /// Issue comments.
+    Comments,
+}
+
+/// What to observe about a repository.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RepositoryFocus {
+    /// Open issues.
+    Issues,
+
+    /// Open pull requests.
+    PullRequests,
 }
 
 /// What was seen when observing a mark.
@@ -64,6 +130,135 @@ pub enum Sighting {
         /// File contents from read paths.
         contents: Vec<FileContents>,
     },
+
+    /// Results from observing a GitHub pull request.
+    ///
+    /// Boxed to keep variant sizes balanced.
+    GitHubPullRequest(Box<PullRequestSighting>),
+
+    /// Results from observing a GitHub issue.
+    GitHubIssue(Box<IssueSighting>),
+
+    /// Results from observing a GitHub repository.
+    GitHubRepository(Box<RepositorySighting>),
+}
+
+/// What was seen when observing a GitHub pull request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestSighting {
+    /// PR metadata.
+    pub summary: Option<GitHubSummary>,
+
+    /// Changed file paths.
+    pub files: Vec<String>,
+
+    /// CI check runs.
+    pub checks: Vec<CheckRun>,
+
+    /// Full diff text.
+    pub diff: Option<String>,
+
+    /// Top-level PR comments.
+    pub comments: Vec<GitHubComment>,
+
+    /// Inline review comments with threads.
+    pub reviews: Vec<ReviewComment>,
+}
+
+/// What was seen when observing a GitHub issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueSighting {
+    /// Issue metadata.
+    pub summary: Option<GitHubSummary>,
+
+    /// Issue comments.
+    pub comments: Vec<GitHubComment>,
+}
+
+/// What was seen when observing a GitHub repository.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositorySighting {
+    /// Open issues.
+    pub issues: Vec<GitHubIssueSummary>,
+
+    /// Open pull requests.
+    pub pull_requests: Vec<GitHubPullRequestSummary>,
+}
+
+/// Metadata for a PR or issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubSummary {
+    pub title: String,
+    pub number: u64,
+    pub state: String,
+    pub author: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+    /// PR-specific: the branch name.
+    pub head_branch: Option<String>,
+    /// PR-specific: the base branch name.
+    pub base_branch: Option<String>,
+    /// Body text.
+    pub body: Option<String>,
+}
+
+/// A CI check run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckRun {
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+}
+
+/// A top-level comment on a PR or issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubComment {
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+}
+
+/// An inline review comment on a PR.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewComment {
+    pub id: u64,
+    pub path: String,
+    pub line: Option<u64>,
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+    /// ID of the comment this replies to, if it's a thread reply.
+    pub in_reply_to_id: Option<u64>,
+}
+
+/// Summary of an issue in a repository listing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubIssueSummary {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub author: String,
+    pub labels: Vec<String>,
+}
+
+/// Summary of a pull request in a repository listing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestSummary {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub author: String,
+    pub labels: Vec<String>,
+    pub head_branch: String,
 }
 
 /// A directory listing produced by listing a path.
