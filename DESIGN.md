@@ -78,7 +78,7 @@ Produces an `Observation`:
 ```
 {
   mark: Mark::RustProject { root: "." },
-  sighting: Sighting::Files { listings: [...], contents: [...] },
+  sighting: Sighting::RustProject { listings: [...], contents: [...] },
   observed_at: "2026-02-26T17:00:00Z"
 }
 ```
@@ -88,7 +88,7 @@ The sighting contains the full directory tree and documentation file contents.
 
 Source code is not read. This is deliberate — `RustProject` is for orientation.
 It answers "what is this project and how is it structured?" not "what does the code do?"
-Once you know which files matter, use `Mark::Files` with targeted paths to read them.
+Once you know which files matter, use `Mark::FileContents` with targeted paths to read them.
 Orient first, then target. This two-step pattern — broad observation to get your bearings,
 then targeted reads where it matters — is central to how Helm works.
 
@@ -182,30 +182,33 @@ you know *what* was looked at without replaying the sighting.
 /// what was observed at a glance. The mark is the logbook's label;
 /// the sighting is the raw data behind it.
 enum Mark {
-    /// Filesystem structure and content.
+    /// Read specific files.
     ///
-    /// Lists directories and reads files exactly as specified.
-    /// No recursion, filtering, or domain awareness.
-    /// Domain-specific marks like `RustProject` add that intelligence.
+    /// The simplest filesystem mark.
+    /// Returns the content of each file (text, binary, or error).
+    FileContents { paths: Vec<PathBuf> },
+
+    /// Recursive directory walk with filtering.
     ///
-    /// `list`: directories to list immediate contents of.
-    /// `read`: files to read.
-    Files {
-        list: Vec<PathBuf>,
-        read: Vec<PathBuf>,
+    /// Respects `.gitignore` by default.
+    /// `skip` names directories to skip at any depth (e.g. "target", "node_modules").
+    /// `max_depth` limits recursion depth (`None` = unlimited).
+    DirectoryTree {
+        root: PathBuf,
+        skip: Vec<String>,
+        max_depth: Option<u32>,
     },
 
     /// A Rust project rooted at a directory.
     ///
-    /// Lists the full tree (respects .gitignore, skips target/).
+    /// Walks the project tree (respects `.gitignore`, skips `target/`).
+    /// Lists the full directory tree with metadata.
     /// Reads documentation files only — README, VISION, CONTRIBUTING,
     /// agent instructions, etc. Source code is not read.
     ///
-    /// This is an orientation mark. Use `Files` with targeted paths
-    /// to read specific source files on subsequent bearings.
-    RustProject {
-        root: PathBuf,
-    },
+    /// This is an orientation mark. Use `FileContents` with targeted paths
+    /// to read specific source files on subsequent observations.
+    RustProject { root: PathBuf },
 
     /// A GitHub pull request.
     ///
@@ -235,21 +238,22 @@ enum Mark {
 
     // ── Planned ──
 
-    /// Human-provided context with no system-observable source.
-    ///
-    /// Offline conversations, decisions made outside the tool, background knowledge.
-    /// No sighting to fetch — just a mark that describes what the context is about,
-    /// and a reading the human attaches.
-    ///
-    /// Structure TBD. Minimum viable: a description string.
+    // Human-provided context with no system-observable source.
+    //
+    // Offline conversations, decisions made outside the tool, background knowledge.
+    // No sighting to fetch — just a mark that describes what the context is about,
+    // and a reading the human attaches.
+    //
+    // Structure TBD. Minimum viable: a description string.
     // Context {
     //     description: String,
     // },
 }
 ```
 
-`Files` separates list (directories) from read (files) as flat vectors.
-`RustProject` is a composite that does both — lists the tree, reads docs.
+Each filesystem mark describes one thing you pointed the spyglass at:
+`FileContents` reads files, `DirectoryTree` shows structure.
+`RustProject` is a domain-aware composite that uses `DirectoryTree` + `FileContents` internally.
 
 ### Sighting
 
@@ -263,12 +267,15 @@ Mirrors `Mark`. One variant per domain, containing the raw data from observation
 /// directory trees, API responses. Stored separately from
 /// the bearing and prunable.
 enum Sighting {
-    /// Results from observing a Files or RustProject mark.
-    Files {
-        /// Directory listings from listed paths.
-        listings: Vec<DirectoryListing>,
+    /// Contents of specific files.
+    FileContents { contents: Vec<FileContents> },
 
-        /// File contents from read paths.
+    /// Recursive directory tree.
+    DirectoryTree { listings: Vec<DirectoryListing> },
+
+    /// Rust project structure and documentation.
+    RustProject {
+        listings: Vec<DirectoryListing>,
         contents: Vec<FileContents>,
     },
 
@@ -323,11 +330,14 @@ enum FileContent {
 }
 ```
 
-`RustProject` reuses `Sighting::Files` — same structure, different mark that produced it.
-A `RustProject` observation returns both:
+Each mark gets its own sighting variant — a sighting contains exactly what its mark produces.
+`DirectoryListing` and `DirectoryTree` both use `Vec<DirectoryListing>` (the struct);
+the flat list of per-directory listings encodes the tree through paths.
+
+A `RustProject` observation returns both structure and documentation:
 
 ```
-Sighting::Files {
+Sighting::RustProject {
     listings: [
         DirectoryListing { path: ".",    entries: [src/, Cargo.toml, README.md, ...] },
         DirectoryListing { path: "./src", entries: [main.rs, model.rs, ...] },
@@ -547,8 +557,9 @@ enum VoyageStatus {
 Each mark describes a domain of observable reality — not a mechanism.
 Commands are how Helm fetches data; marks describe what Helm is looking at.
 
-- **Files** — directory listings with metadata, file contents. Implemented.
-- **RustProject** — full project tree, documentation files. Implemented.
+- **FileContents** — read specific files. Implemented.
+- **DirectoryTree** — recursive walk with `.gitignore`, skip patterns, depth limits. Implemented.
+- **RustProject** — full project tree, documentation files. Domain-aware composite. Implemented.
 - **GitHub** — PR/issue metadata, check summaries, diffs, comment bodies, inline review threads. Implemented as three marks: `GitHubPullRequest`, `GitHubIssue`, `GitHubRepository`, each with domain-specific focus items.
 - **Context** — human-provided context with no system-observable source. Planned.
 - **Web** — status, headers, response bodies. Future.
@@ -607,7 +618,8 @@ Helm is for voyages only — no voyage, no helm.
 helm voyage new --as <identity> <intent> [--kind open-waters|resolve-issue]
 helm voyage list
 
-helm --voyage <id> observe files [--list <dir>...] [--read <file>...]
+helm --voyage <id> observe file-contents --read <file>...
+helm --voyage <id> observe directory-tree <root> [--skip <name>...] [--max-depth <n>]
 helm --voyage <id> observe rust-project <path>
 helm --voyage <id> observe github-pr <number> [--focus summary|files|checks|diff|comments|reviews]
 helm --voyage <id> observe github-issue <number> [--focus summary|comments]

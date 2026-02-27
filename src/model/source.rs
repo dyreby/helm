@@ -31,24 +31,32 @@ pub struct Observation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Mark {
-    /// Filesystem structure and content.
+    /// Read specific files.
     ///
-    /// Lists directories and reads files exactly as specified.
-    /// No recursion, filtering, or domain awareness.
-    /// Domain-specific marks like `RustProject` add that intelligence.
+    /// The simplest filesystem mark.
+    /// Returns the content of each file (text, binary, or error).
+    FileContents { paths: Vec<PathBuf> },
+
+    /// Recursive directory walk with filtering.
     ///
-    /// - `list`: directories to list immediate contents of.
-    /// - `read`: files to read.
-    Files {
-        list: Vec<PathBuf>,
-        read: Vec<PathBuf>,
+    /// Respects `.gitignore` by default.
+    /// `skip` names directories to skip at any depth (e.g. "target", "`node_modules`").
+    /// `max_depth` limits recursion depth (`None` = unlimited).
+    DirectoryTree {
+        root: PathBuf,
+        skip: Vec<String>,
+        max_depth: Option<u32>,
     },
 
     /// A Rust project rooted at a directory.
     ///
-    /// Walks the project tree, respects `.gitignore`, skips `target/`.
+    /// Walks the project tree (respects `.gitignore`, skips `target/`).
     /// Lists the full directory tree with metadata.
-    /// Reads documentation files (everything else is left for targeted `Files` queries).
+    /// Reads documentation files only — README, VISION, CONTRIBUTING,
+    /// agent instructions, etc. Source code is not read.
+    ///
+    /// This is an orientation mark. Use `FileContents` with targeted paths
+    /// to read specific source files on subsequent observations.
     RustProject { root: PathBuf },
 
     /// A GitHub pull request.
@@ -119,15 +127,22 @@ pub enum RepositoryFocus {
 }
 
 /// What was seen when observing a mark.
+///
+/// Each variant corresponds to a Mark variant.
+/// The sighting is the heavy payload — full file contents, directory trees, API responses.
+/// Stored separately from the bearing and prunable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Sighting {
-    /// Results from observing a filesystem mark.
-    Files {
-        /// Directory listings from listed paths.
-        listings: Vec<DirectoryListing>,
+    /// Contents of specific files.
+    FileContents { contents: Vec<FileContents> },
 
-        /// File contents from read paths.
+    /// Recursive directory tree.
+    DirectoryTree { listings: Vec<DirectoryListing> },
+
+    /// Rust project structure and documentation.
+    RustProject {
+        listings: Vec<DirectoryListing>,
         contents: Vec<FileContents>,
     },
 
@@ -261,7 +276,7 @@ pub struct GitHubPullRequestSummary {
     pub head_branch: String,
 }
 
-/// A directory listing produced by listing a path.
+/// A directory listing: what's at this path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirectoryListing {
@@ -287,6 +302,14 @@ pub struct FileContents {
 }
 
 /// What was found when reading a file.
+///
+/// No file-type field (Rust, Markdown, TOML, etc.) — the file extension
+/// is in the `path` and the consumer knows what to do with the content.
+/// Adding a kind enum would duplicate derivable information and create
+/// a maintenance surface for every new file type encountered.
+///
+/// If structured parsing is ever needed (Rust AST, Markdown sections),
+/// that's a different sighting type, not a field here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FileContent {

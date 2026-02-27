@@ -2,17 +2,16 @@
 //!
 //! Walks a Rust project tree, respects `.gitignore`, skips `target/`.
 //! Produces a full directory tree (listings) and reads documentation files (contents).
-//! Source code is not read — that's what `Files` is for on subsequent bearings.
+//! Source code is not read — that's what `FileContents` is for on subsequent observations.
+//!
+//! Reuses `DirectoryTree`'s walk logic for the tree,
+//! then reads documentation files from the walked paths.
 
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
-use ignore::WalkBuilder;
+use crate::model::{DirectoryListing, FileContent, FileContents, Sighting};
 
-use crate::model::{DirectoryEntry, DirectoryListing, FileContent, FileContents, Sighting};
+use super::directory_tree::walk_tree;
 
 /// Well-known documentation file names (case-insensitive matching).
 ///
@@ -68,54 +67,25 @@ fn is_doc_file(path: &Path, root: &Path) -> bool {
     false
 }
 
-/// Observe a Rust project: full directory tree and all documentation.
+/// Read documentation files from a set of directory listings.
 ///
-/// Uses the `ignore` crate to respect `.gitignore` and skips `target/`.
-/// The tree gives structure; docs give intent and context.
-/// Source files are left for targeted `Files` queries on subsequent bearings.
-pub fn observe_rust_project(root: &Path) -> Sighting {
-    let mut dir_entries: BTreeMap<PathBuf, Vec<DirectoryEntry>> = BTreeMap::new();
-    let mut contents: Vec<FileContents> = Vec::new();
+/// Scans the listings for file entries that match doc patterns,
+/// reconstructs their full paths, and reads them.
+fn read_docs(listings: &[DirectoryListing], root: &Path) -> Vec<FileContents> {
+    let mut contents = Vec::new();
 
-    let walker = WalkBuilder::new(root)
-        .hidden(false) // Show dotfiles (like .github/).
-        .filter_entry(|entry| {
-            // Skip target/ at any level.
-            !(entry.file_type().is_some_and(|ft| ft.is_dir()) && entry.file_name() == "target")
-        })
-        .sort_by_file_name(Ord::cmp)
-        .build();
+    for listing in listings {
+        for entry in &listing.entries {
+            if entry.is_dir {
+                continue;
+            }
 
-    for entry in walker.flatten() {
-        let path = entry.path();
+            let file_path = listing.path.join(&entry.name);
+            if !is_doc_file(&file_path, root) {
+                continue;
+            }
 
-        if path == root {
-            continue;
-        }
-
-        let metadata = entry.metadata().ok();
-        let is_dir = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
-
-        // Record this entry under its parent directory.
-        if let Some(parent) = path.parent() {
-            let dir_entry = DirectoryEntry {
-                name: entry.file_name().to_string_lossy().into_owned(),
-                is_dir,
-                size_bytes: if is_dir {
-                    None
-                } else {
-                    metadata.as_ref().map(fs::Metadata::len)
-                },
-            };
-            dir_entries
-                .entry(parent.to_path_buf())
-                .or_default()
-                .push(dir_entry);
-        }
-
-        // Read documentation files only.
-        if !is_dir && is_doc_file(path, root) {
-            let content = match fs::read(path) {
+            let content = match fs::read(&file_path) {
                 Ok(bytes) => match String::from_utf8(bytes) {
                     Ok(text) => FileContent::Text { content: text },
                     Err(e) => FileContent::Binary {
@@ -127,18 +97,26 @@ pub fn observe_rust_project(root: &Path) -> Sighting {
                 },
             };
             contents.push(FileContents {
-                path: path.to_path_buf(),
+                path: file_path,
                 content,
             });
         }
     }
 
-    let listings = dir_entries
-        .into_iter()
-        .map(|(path, entries)| DirectoryListing { path, entries })
-        .collect();
+    contents
+}
 
-    Sighting::Files { listings, contents }
+/// Observe a Rust project: full directory tree and all documentation.
+///
+/// Uses the `DirectoryTree` walk logic with `target/` skipped.
+/// The tree gives structure; docs give intent and context.
+/// Source files are left for targeted `FileContents` queries on subsequent observations.
+pub fn observe_rust_project(root: &Path) -> Sighting {
+    let skip = vec!["target".to_string()];
+    let listings = walk_tree(root, &skip, None);
+    let contents = read_docs(&listings, root);
+
+    Sighting::RustProject { listings, contents }
 }
 
 #[cfg(test)]
@@ -180,12 +158,12 @@ mod tests {
     #[test]
     fn tree_includes_all_non_ignored_entries() {
         let dir = setup_rust_project();
-        let Sighting::Files {
+        let Sighting::RustProject {
             listings,
             contents: _,
         } = observe_rust_project(dir.path())
         else {
-            unreachable!()
+            unreachable!();
         };
 
         // Root should have src/, docs/, Cargo.toml, README.md, etc. but not target/.
@@ -205,8 +183,8 @@ mod tests {
     #[test]
     fn reads_only_docs() {
         let dir = setup_rust_project();
-        let Sighting::Files { contents, .. } = observe_rust_project(dir.path()) else {
-            unreachable!()
+        let Sighting::RustProject { contents, .. } = observe_rust_project(dir.path()) else {
+            unreachable!();
         };
 
         let paths: Vec<String> = contents
@@ -234,8 +212,8 @@ mod tests {
     #[test]
     fn skips_target_directory() {
         let dir = setup_rust_project();
-        let Sighting::Files { listings, contents } = observe_rust_project(dir.path()) else {
-            unreachable!()
+        let Sighting::RustProject { listings, contents } = observe_rust_project(dir.path()) else {
+            unreachable!();
         };
 
         assert!(!listings.iter().any(|s| s.path.ends_with("target")));
@@ -250,12 +228,12 @@ mod tests {
     #[test]
     fn tree_includes_nested_structure() {
         let dir = setup_rust_project();
-        let Sighting::Files {
+        let Sighting::RustProject {
             listings,
             contents: _,
         } = observe_rust_project(dir.path())
         else {
-            unreachable!()
+            unreachable!();
         };
 
         // src/ directory should have its own listing.

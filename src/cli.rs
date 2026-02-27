@@ -49,7 +49,8 @@ const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
 
 Stopping mid-voyage? Take a bearing so the next session has context:
   helm --voyage a3b observe rust-project . --out obs.json
-  helm --voyage a3b bearing --reading "Halfway through, refactoring widget module" --observation obs.json
+  helm --voyage a3b observe file-contents --read src/widget.rs --out widget.json
+  helm --voyage a3b bearing --reading "Halfway through, refactoring widget module" --observation obs.json --observation widget.json
 
 Observe GitHub:
   helm --voyage a3b observe github-pr 42 --focus summary --focus diff
@@ -301,21 +302,33 @@ impl VoyageKindArg {
 
 #[derive(Debug, Subcommand)]
 pub enum ObserveSource {
+    /// Read specific files.
+    FileContents {
+        /// Files to read (full contents).
+        #[arg(long)]
+        read: Vec<PathBuf>,
+    },
+
+    /// Walk a directory tree recursively.
+    ///
+    /// Respects `.gitignore` by default.
+    DirectoryTree {
+        /// Root directory to walk.
+        root: PathBuf,
+
+        /// Directory names to skip at any depth (e.g. "target", "`node_modules`").
+        #[arg(long)]
+        skip: Vec<String>,
+
+        /// Maximum recursion depth (unlimited if not specified).
+        #[arg(long)]
+        max_depth: Option<u32>,
+    },
+
     /// Observe a Rust project: full directory tree and documentation.
     RustProject {
         /// Path to the project root.
         path: PathBuf,
-    },
-
-    /// Observe the filesystem: list directories and read files.
-    Files {
-        /// Directories to list (immediate contents with metadata).
-        #[arg(long)]
-        list: Vec<PathBuf>,
-
-        /// Files to read (full contents).
-        #[arg(long)]
-        read: Vec<PathBuf>,
     },
 
     /// Observe a GitHub pull request.
@@ -530,19 +543,30 @@ fn cmd_observe(
     out: Option<PathBuf>,
 ) -> Result<(), String> {
     let (mark, needs_gh) = match source {
-        ObserveSource::RustProject { path } => (Mark::RustProject { root: path.clone() }, false),
-        ObserveSource::Files { list, read } => {
-            if list.is_empty() && read.is_empty() {
-                return Err("specify at least one --list or --read".to_string());
+        ObserveSource::FileContents { read } => {
+            if read.is_empty() {
+                return Err("specify at least one --read".to_string());
             }
             (
-                Mark::Files {
-                    list: list.clone(),
-                    read: read.clone(),
+                Mark::FileContents {
+                    paths: read.clone(),
                 },
                 false,
             )
         }
+        ObserveSource::DirectoryTree {
+            root,
+            skip,
+            max_depth,
+        } => (
+            Mark::DirectoryTree {
+                root: root.clone(),
+                skip: skip.clone(),
+                max_depth: *max_depth,
+            },
+            false,
+        ),
+        ObserveSource::RustProject { path } => (Mark::RustProject { root: path.clone() }, false),
         ObserveSource::GitHubPullRequest { number, focus } => (
             Mark::GitHubPullRequest {
                 number: *number,
@@ -1089,14 +1113,26 @@ fn cmd_log(storage: &Storage, voyage: &Voyage) -> Result<(), String> {
                 println!("── Bearing {} ── {}", i + 1, b.taken_at);
                 for mark in &b.marks {
                     match mark {
-                        Mark::Files { list, read } => {
-                            println!("  Mark: Files");
-                            for l in list {
-                                println!("    list: {}", l.display());
+                        Mark::FileContents { paths } => {
+                            println!("  Mark: FileContents");
+                            for p in paths {
+                                let path: &PathBuf = p;
+                                println!("    read: {}", path.display());
                             }
-                            for r in read {
-                                println!("    read: {}", r.display());
+                        }
+                        Mark::DirectoryTree {
+                            root,
+                            skip,
+                            max_depth,
+                        } => {
+                            print!("  Mark: DirectoryTree @ {}", root.display());
+                            if !skip.is_empty() {
+                                print!(" (skip: {})", skip.join(", "));
                             }
+                            if let Some(depth) = max_depth {
+                                print!(" (depth: {depth})");
+                            }
+                            println!();
                         }
                         Mark::RustProject { root } => {
                             println!("  Mark: RustProject @ {}", root.display());
