@@ -1,6 +1,6 @@
 # Vision
 
-Helm is how I want to work with a coding agent.
+Helm is how I want to navigate collaborative software work.
 
 I shape what the system can do — the types of observations it can take, the actions it can perform.
 Then I trust that envelope. The logbook tells me what happened; the code ensures it was in scope.
