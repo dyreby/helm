@@ -76,18 +76,16 @@ mod tests {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("test.txt"), "hello").unwrap();
 
-        let mark = Mark::Files {
-            list: vec![dir.path().to_path_buf()],
-            read: vec![dir.path().join("test.txt")],
+        let mark = Mark::FileContents {
+            paths: vec![dir.path().join("test.txt")],
         };
 
         // Step 1: observe.
         let observation = observe(&mark, None);
 
-        let Sighting::Files { listings, contents } = &observation.sighting else {
-            unreachable!()
+        let Sighting::FileContents { contents } = &observation.sighting else {
+            panic!("expected FileContents sighting");
         };
-        assert_eq!(listings.len(), 1);
         assert_eq!(contents.len(), 1);
 
         // Step 2: record with reading.
@@ -105,17 +103,17 @@ mod tests {
         fs::write(dir.path().join("b.txt"), "bbb").unwrap();
 
         let obs1 = observe(
-            &Mark::Files {
-                list: vec![dir.path().to_path_buf()],
-                read: vec![],
+            &Mark::DirectoryTree {
+                root: dir.path().to_path_buf(),
+                skip: vec![],
+                max_depth: None,
             },
             None,
         );
 
         let obs2 = observe(
-            &Mark::Files {
-                list: vec![],
-                read: vec![dir.path().join("a.txt")],
+            &Mark::FileContents {
+                paths: vec![dir.path().join("a.txt")],
             },
             None,
         );
@@ -141,9 +139,10 @@ mod tests {
     fn rejects_empty_reading() {
         let dir = TempDir::new().unwrap();
         let observation = observe(
-            &Mark::Files {
-                list: vec![dir.path().to_path_buf()],
-                read: vec![],
+            &Mark::DirectoryTree {
+                root: dir.path().to_path_buf(),
+                skip: vec![],
+                max_depth: None,
             },
             None,
         );
@@ -158,18 +157,18 @@ mod tests {
         fs::write(dir.path().join("a.txt"), "aaa").unwrap();
 
         let keep = observe(
-            &Mark::Files {
-                list: vec![dir.path().to_path_buf()],
-                read: vec![],
+            &Mark::DirectoryTree {
+                root: dir.path().to_path_buf(),
+                skip: vec![],
+                max_depth: None,
             },
             None,
         );
 
         // Take another observation but don't include it.
         let _discard = observe(
-            &Mark::Files {
-                list: vec![],
-                read: vec![dir.path().join("a.txt")],
+            &Mark::FileContents {
+                paths: vec![dir.path().join("a.txt")],
             },
             None,
         );

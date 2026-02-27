@@ -226,11 +226,12 @@ mod tests {
 
     fn sample_observation() -> Observation {
         Observation {
-            mark: Mark::Files {
-                list: vec![PathBuf::from("src/")],
-                read: vec![],
+            mark: Mark::DirectoryTree {
+                root: PathBuf::from("src/"),
+                skip: vec![],
+                max_depth: None,
             },
-            sighting: Sighting::Files {
+            sighting: Sighting::DirectoryTree {
                 listings: vec![DirectoryListing {
                     path: PathBuf::from("src/"),
                     entries: vec![DirectoryEntry {
@@ -239,7 +240,6 @@ mod tests {
                         size_bytes: Some(42),
                     }],
                 }],
-                contents: vec![],
             },
             observed_at: Timestamp::now(),
         }
@@ -247,9 +247,10 @@ mod tests {
 
     fn sample_bearing() -> Bearing {
         Bearing {
-            marks: vec![Mark::Files {
-                list: vec![PathBuf::from("src/")],
-                read: vec![],
+            marks: vec![Mark::DirectoryTree {
+                root: PathBuf::from("src/"),
+                skip: vec![],
+                max_depth: None,
             }],
             observation_refs: vec![1],
             reading: Reading {
@@ -442,7 +443,7 @@ mod tests {
         // Verify it round-trips.
         let json = fs::read_to_string(obs_path).unwrap();
         let loaded: Observation = serde_json::from_str(&json).unwrap();
-        assert!(matches!(loaded.mark, Mark::Files { .. }));
+        assert!(matches!(loaded.mark, Mark::DirectoryTree { .. }));
     }
 
     #[test]
