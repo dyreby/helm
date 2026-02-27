@@ -77,7 +77,7 @@ pub enum Command {
     /// Pure read, no side effects, repeatable.
     /// The observation JSON is written to `--out` (if given) or stdout.
     /// A human-readable summary is printed to stderr when writing to a file.
-    /// GitHub observations require `--as`.
+    /// GitHub observations require identity (`--as`, `HELM_IDENTITY`, or `~/.helm/config.toml`).
     Observe {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
         #[arg(long)]
