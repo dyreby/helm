@@ -26,8 +26,8 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::model::{
-    Action, IssueFocus, LogbookEntry, Mark, Observation, PullRequestFocus,
-    RepositoryFocus, Voyage, VoyageKind, VoyageStatus,
+    Action, IssueFocus, LogbookEntry, Mark, Observation, PullRequestFocus, RepositoryFocus, Voyage,
+    VoyageKind, VoyageStatus,
 };
 use crate::{bearing, storage::Storage};
 

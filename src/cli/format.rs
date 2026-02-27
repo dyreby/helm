@@ -1,6 +1,8 @@
 //! Output formatting for CLI display.
 
-use crate::model::{ActionKind, IssueAction, IssueFocus, PullRequestAction, PullRequestFocus, RepositoryFocus};
+use crate::model::{
+    ActionKind, IssueAction, IssueFocus, PullRequestAction, PullRequestFocus, RepositoryFocus,
+};
 
 /// Format an act for human-readable display.
 pub(super) fn format_action(act: &ActionKind) -> String {
