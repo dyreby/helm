@@ -6,9 +6,11 @@ Helm observes the world, acts upon it, and records everything in an append-only 
 Three commands (**observe**, **steer**, **log**) and one invariant: only steer and log write to the logbook.
 
 ```
-helm observe issue 42        # look at something, add to the working set
-helm steer comment 42 "..."  # act on collaborative state, seal and log
-helm log waiting              # record a state, seal and log
+helm voyage new "Fix widget crash"                                              # → a3b0fc12
+helm observe --voyage a3b --as dyreby github-issue 42                           # add to working set
+helm steer --voyage a3b --as dyreby --summary "Plan" comment --issue 42 --body "here's my plan"
+helm log --voyage a3b --as dyreby --summary "Waiting for review" "blocked"      # seal and record
+helm voyage end --voyage a3b --status "Merged PR #45"
 ```
 
 Work is organized into **voyages** — units of work, each with its own logbook.
