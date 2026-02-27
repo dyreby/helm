@@ -22,6 +22,19 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Action** | An operation Helm performed | `Action` |
 | **Action kind** | The specific thing that was done (push, create PR, comment) | `ActionKind` |
 
+### Canonical Verbs
+
+Verbs pair with nouns consistently across code, CLI, and docs.
+
+| Noun | Verb | Example |
+|------|------|---------|
+| **Mark** | observe | "Observe a mark" — look at it, capture a sighting |
+| **Bearing** | take | "Take a bearing" — interpret what was observed, write it to the logbook |
+| **Action** | perform | "Perform an action" — do something in the world, the logbook records it |
+| **Voyage** | start / complete | "Start a voyage" / "Complete a voyage" |
+
+The logbook **records** — that's its job, not the caller's verb. You observe, take bearings, and perform actions. The logbook captures all of it.
+
 Marks + readings tell the logbook story. Sightings are the raw evidence — useful during the session, not needed for the narrative.
 
 ### Bearing vs. Observation
@@ -79,11 +92,11 @@ Once you know which files matter, use `Mark::Files` with targeted paths to read 
 Orient first, then target. This two-step pattern — broad observation to get your bearings,
 then targeted reads where it matters — is central to how Helm works.
 
-### 3. Record a bearing
+### 3. Take a bearing
 
 ```bash
-$ helm --voyage a3b record --reading "Widget module has a null check missing in init(). Test coverage exists but doesn't hit this path." --observation obs.json
-Bearing recorded for voyage a3b0fc12
+$ helm --voyage a3b bearing --reading "Widget module has a null check missing in init(). Test coverage exists but doesn't hit this path." --observation obs.json
+Bearing taken for voyage a3b0fc12
 Reading: Widget module has a null check missing in init()...
 ```
 
@@ -103,20 +116,20 @@ Scanning the logbook later, the bearing reads: *"Looked at the Rust project. Wid
 ### 4. Do the work, then act
 
 ```bash
-$ helm --voyage a3b act commit --message "Fix null check in widget init"
-Action recorded for voyage a3b0fc12
+$ helm --voyage a3b action commit --message "Fix null check in widget init"
+Action performed for voyage a3b0fc12
   committed (abc1234)
 
-$ helm --voyage a3b act push --branch fix-widget
-Action recorded for voyage a3b0fc12
+$ helm --voyage a3b action push --branch fix-widget
+Action performed for voyage a3b0fc12
   pushed to fix-widget (abc1234)
 
-$ helm --voyage a3b act create-pull-request --branch fix-widget --title "Fix widget crash" --reviewer dyreby
-Action recorded for voyage a3b0fc12
+$ helm --voyage a3b action create-pull-request --branch fix-widget --title "Fix widget crash" --reviewer dyreby
+Action performed for voyage a3b0fc12
   created PR #45
 ```
 
-Each act performs the operation *and* records it. The logbook now has three `LogbookEntry::Action` entries.
+Each action performs the operation and records it in the logbook. The logbook now has three `LogbookEntry::Action` entries.
 
 ### 5. Complete the voyage
 
@@ -600,9 +613,9 @@ helm --voyage <id> observe github-pr <number> [--focus summary|files|checks|diff
 helm --voyage <id> observe github-issue <number> [--focus summary|comments]
 helm --voyage <id> observe github-repo [--focus issues|pull-requests]
 
-helm --voyage <id> record --reading <text> [--observation <file>...]
+helm --voyage <id> bearing --reading <text> [--observation <file>...]
 
-helm --voyage <id> act <act-subcommand>
+helm --voyage <id> action <action-subcommand>
 
 helm --voyage <id> complete [--summary <text>]
 helm --voyage <id> log
@@ -610,8 +623,8 @@ helm --voyage <id> log
 
 `--voyage` takes a full UUID or unambiguous prefix (e.g. `a3b`).
 `helm observe` outputs JSON to stdout or `--out <file>`.
-`helm record` reads observations from `--observation` files or stdin.
-`helm act` performs the operation and records it in the logbook.
+`helm bearing` reads observations from `--observation` files or stdin.
+`helm action` performs the operation and records it in the logbook.
 Identity for `act` comes from the voyage — no per-command `--as`.
 
 ## Open Questions

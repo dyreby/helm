@@ -38,7 +38,7 @@ To create one, use the [commission template](https://github.com/dyreby/helm/issu
 
 A **voyage** is tracked through the helm CLI.
 To start work on a mission, create a `resolve-issue` voyage for it.
-The voyage records the journey — bearings taken, actions acted — as an append-only logbook.
+The voyage records the journey — bearings taken, actions performed — as an append-only logbook.
 
 #### Voyage Types
 
@@ -51,7 +51,7 @@ More voyage types will be added as helm grows. When they are, corresponding miss
 
 1. Check the commission — see what's next.
 2. Start a voyage for the next mission.
-3. Work through it. Record bearings. Take actions.
+3. Work through it. Take bearings. Perform actions.
 4. Complete the voyage. Check off the mission.
 5. Return to the commission.
 
