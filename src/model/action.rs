@@ -19,9 +19,6 @@ use uuid::Uuid;
 pub struct Action {
     pub id: Uuid,
 
-    /// Which identity performed this action (e.g. "dyreby", "john-agent").
-    pub identity: String,
-
     /// What was done.
     pub kind: ActionKind,
 

@@ -3,15 +3,13 @@
 //! Designed for agents and humans alike to record voyages and bearings from the command line.
 //! Each subcommand is non-interactive: arguments in, structured output out.
 //!
-//! Commands are organized by clarity:
+//! Commands split into two groups:
 //!
-//! - `helm voyage` — lifecycle commands grouped under the domain concept.
-//! - `helm observe`, `helm record` — flat verbs, unambiguous on their own.
-//! - `helm act` — perform and record an action.
+//! - `helm voyage new|list` — lifecycle management, no voyage context needed.
+//! - `helm --voyage <id> <command>` — everything else, operating within a voyage.
 //!
-//! Observing outputs an observation (mark + sighting) to stdout or a file.
-//! Recording selects observations, attaches a reading, and writes the bearing to the logbook.
-//! Acting performs git/GitHub operations and records them in the logbook.
+//! Identity is set at voyage creation and inherited by all commands.
+//! The `--voyage` flag takes a full UUID or unambiguous prefix.
 
 use std::path::PathBuf;
 use std::{fs, io, process};
@@ -23,6 +21,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use jiff::Timestamp;
 use uuid::Uuid;
 
+use crate::config::Config;
 use crate::model::{
     Action, ActionKind, IssueAction, LogbookEntry, Mark, Observation, PullRequestAction, Voyage,
     VoyageKind, VoyageStatus,
@@ -33,33 +32,38 @@ use crate::{bearing, storage::Storage};
 #[derive(Debug, Parser)]
 #[command(name = "helm", after_long_help = WORKFLOW_HELP)]
 pub struct Cli {
+    /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
+    /// Required for observe, record, act, complete, and log.
+    #[arg(long, global = true)]
+    voyage: Option<String>,
+
     #[command(subcommand)]
     pub command: Command,
 }
 
 const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
-  1. helm voyage new "Resolve #42: fix widget crash" --kind resolve-issue
+  1. helm voyage new --as john-agent --kind resolve-issue "Resolve #42: fix widget crash"
      → prints a voyage ID (e.g. a3b0fc12)
   2. Do the work — fix the bug, open the PR, get it merged.
-  3. helm voyage complete a3b --summary "Fixed null check in widget init"
+  3. helm --voyage a3b complete --summary "Fixed null check in widget init"
 
 Stopping mid-voyage? Record a bearing so the next session has context:
-  helm observe rust-project . --out obs.json
-  helm record a3b --reading "Halfway through, refactoring widget module" --observation obs.json
+  helm --voyage a3b observe rust-project . --out obs.json
+  helm --voyage a3b record --reading "Halfway through, refactoring widget module" --observation obs.json
 
 Record actions:
-  helm act a3b --as john-agent commit --message "Fix null check in widget init"
-  helm act a3b --as john-agent push --branch fix-widget
-  helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget"
-  helm act a3b --as john-agent merge-pull-request 45
+  helm --voyage a3b act commit --message "Fix null check in widget init"
+  helm --voyage a3b act push --branch fix-widget
+  helm --voyage a3b act create-pull-request --branch fix-widget --title "Fix widget"
+  helm --voyage a3b act merge-pull-request 45
 
 Check on voyages:
-  helm voyage list           → see active voyages
-  helm voyage log a3b        → see the trail of bearings and actions"#;
+  helm voyage list              → see active voyages
+  helm --voyage a3b log         → see the trail of bearings and actions"#;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Manage voyages: units of work with intent and a logbook.
+    /// Manage voyages: create new ones, list existing.
     Voyage {
         #[command(subcommand)]
         command: VoyageCommand,
@@ -70,6 +74,7 @@ pub enum Command {
     /// Pure read, no side effects, repeatable.
     /// The observation is written as JSON to `--out` (if given) or stdout.
     /// A human-readable summary is printed to stderr when writing to a file.
+    /// Requires `--voyage`.
     Observe {
         #[command(subcommand)]
         source: ObserveSource,
@@ -87,11 +92,9 @@ pub enum Command {
     /// Bearings exist for continuity, not just documentation.
     /// Record one when you'd need context if you had to stop and come back
     /// in a new session. If you're finishing in this session, skip the bearing
-    /// and use `helm voyage complete --summary` instead.
+    /// and use `helm --voyage <id> complete --summary` instead.
+    /// Requires `--voyage`.
     Record {
-        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
-        voyage: String,
-
         /// Your reading of the observed mark.
         #[arg(long)]
         reading: String,
@@ -106,24 +109,36 @@ pub enum Command {
     /// Perform an action.
     ///
     /// Each action records a single act (push, create PR, merge, comment, etc.)
-    /// and the identity that performed it. The logbook captures what happened,
-    /// not what was planned — failed operations are not recorded.
-    ///
-    /// Identity selects which GitHub account to use for `gh` commands.
-    /// Git operations use ambient git config.
+    /// Identity is inherited from the voyage.
+    /// The logbook captures what happened, not what was planned —
+    /// failed operations are not recorded.
+    /// Requires `--voyage`.
     Act {
-        /// Voyage ID: full UUID or unambiguous prefix.
-        voyage: String,
-
-        /// Identity to act as (e.g. "dyreby", "john-agent").
-        /// Selects the GitHub config directory for `gh` commands.
-        #[arg(long = "as")]
-        identity: String,
-
         /// The act to perform.
         #[command(subcommand)]
         act: ActCommand,
     },
+
+    /// Mark a voyage as completed.
+    ///
+    /// Updates the voyage status to completed.
+    /// The summary captures the outcome — what was accomplished or learned.
+    /// If the voyage finishes in a single session, this is often the only
+    /// record needed (no bearing required).
+    /// Requires `--voyage`.
+    Complete {
+        /// Summary of what was accomplished or learned.
+        #[arg(long)]
+        summary: Option<String>,
+    },
+
+    /// Show a voyage's logbook: the trail of bearings and actions.
+    ///
+    /// Displays observations and readings for each bearing,
+    /// and identity/act for each action.
+    /// The logbook tells the story through readings and actions.
+    /// Requires `--voyage`.
+    Log,
 }
 
 /// Act subcommands — one per kind of action.
@@ -241,6 +256,12 @@ pub enum ActCommand {
 pub enum VoyageCommand {
     /// Create a new voyage. Prints the voyage ID.
     New {
+        /// Identity for this voyage (e.g. "john-agent").
+        /// All commands on this voyage inherit this identity for GitHub auth.
+        /// When omitted, system default `gh` auth is used.
+        #[arg(long = "as")]
+        identity: Option<String>,
+
         /// What this voyage is about.
         intent: String,
 
@@ -251,31 +272,6 @@ pub enum VoyageCommand {
 
     /// List active voyages.
     List,
-
-    /// Show a voyage's logbook: the trail of bearings and actions.
-    ///
-    /// Displays observations and readings for each bearing,
-    /// and identity/act for each action.
-    /// The logbook tells the story through readings and actions.
-    Log {
-        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
-        voyage: String,
-    },
-
-    /// Mark a voyage as completed.
-    ///
-    /// Updates the voyage status to completed.
-    /// The summary captures the outcome — what was accomplished or learned.
-    /// If the voyage finishes in a single session, this is often the only
-    /// record needed (no bearing required).
-    Complete {
-        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b` if only one ID starts with that).
-        voyage: String,
-
-        /// Summary of what was accomplished or learned.
-        #[arg(long)]
-        summary: Option<String>,
-    },
 }
 
 /// CLI-facing voyage kind, mapped to the domain `VoyageKind`.
@@ -318,35 +314,62 @@ pub enum ObserveSource {
 }
 
 /// Run the CLI, returning an error message on failure.
-pub fn run(storage: &Storage) -> Result<(), String> {
+pub fn run(config: &Config, storage: &Storage) -> Result<(), String> {
     let cli = Cli::parse();
 
     match cli.command {
         Command::Voyage { command } => match command {
-            VoyageCommand::New { intent, kind } => cmd_new(storage, &intent, &kind),
+            VoyageCommand::New {
+                identity,
+                intent,
+                kind,
+            } => cmd_new(config, storage, identity.as_deref(), &intent, &kind),
             VoyageCommand::List => cmd_list(storage),
-            VoyageCommand::Log { voyage } => cmd_log(storage, &voyage),
-            VoyageCommand::Complete { voyage, summary } => {
-                cmd_complete(storage, &voyage, summary.as_deref())
-            }
         },
-        Command::Observe { ref source, out } => cmd_observe(source, out),
+        Command::Observe { ref source, out } => {
+            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
+            cmd_observe(&voyage, source, out)
+        }
         Command::Record {
-            voyage,
             reading,
             observation,
-        } => cmd_record(storage, &voyage, &reading, &observation),
-        Command::Act {
-            voyage,
-            identity,
-            act,
-        } => cmd_act(storage, &voyage, &identity, &act),
+        } => {
+            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
+            cmd_record(storage, &voyage, &reading, &observation)
+        }
+        Command::Act { act } => {
+            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
+            cmd_act(storage, &voyage, &act)
+        }
+        Command::Complete { summary } => {
+            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
+            cmd_complete(storage, &voyage, summary.as_deref())
+        }
+        Command::Log => {
+            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
+            cmd_log(storage, &voyage)
+        }
     }
 }
 
-fn cmd_new(storage: &Storage, intent: &str, kind: &VoyageKindArg) -> Result<(), String> {
+/// Require that `--voyage` was provided and resolve it.
+fn require_voyage(storage: &Storage, voyage_ref: Option<&str>) -> Result<Voyage, String> {
+    let voyage_ref = voyage_ref.ok_or("this command requires --voyage <id>")?;
+    resolve_voyage(storage, voyage_ref)
+}
+
+fn cmd_new(
+    config: &Config,
+    storage: &Storage,
+    identity: Option<&str>,
+    intent: &str,
+    kind: &VoyageKindArg,
+) -> Result<(), String> {
+    let identity = identity.unwrap_or(&config.default_identity);
+
     let voyage = Voyage {
         id: Uuid::new_v4(),
+        identity: identity.to_string(),
         kind: kind.to_domain(),
         intent: intent.to_string(),
         created_at: Timestamp::now(),
@@ -381,13 +404,20 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
             VoyageKind::ResolveIssue => "resolve-issue",
         };
         let short_id = &v.id.to_string()[..8];
-        println!("{short_id}  [{status}] [{kind}]  {}", v.intent);
+        println!(
+            "{short_id}  [{status}] [{kind}] [{}]  {}",
+            v.identity, v.intent
+        );
     }
 
     Ok(())
 }
 
-fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), String> {
+fn cmd_observe(
+    voyage: &Voyage,
+    source: &ObserveSource,
+    out: Option<PathBuf>,
+) -> Result<(), String> {
     let mark = match source {
         ObserveSource::RustProject { path } => Mark::RustProject { root: path.clone() },
         ObserveSource::Files { list, read } => {
@@ -417,17 +447,18 @@ fn cmd_observe(source: &ObserveSource, out: Option<PathBuf>) -> Result<(), Strin
         }
     }
 
+    // Suppress unused variable warning until GitHub observation uses the voyage identity.
+    let _ = voyage;
+
     Ok(())
 }
 
 fn cmd_record(
     storage: &Storage,
-    voyage_ref: &str,
+    voyage: &Voyage,
     reading: &str,
     observation_paths: &[PathBuf],
 ) -> Result<(), String> {
-    let voyage = resolve_voyage(storage, voyage_ref)?;
-
     // Load observations from files or stdin.
     let observations = if observation_paths.is_empty() {
         // Read a single observation from stdin.
@@ -478,14 +509,7 @@ fn cmd_record(
     Ok(())
 }
 
-fn cmd_act(
-    storage: &Storage,
-    voyage_ref: &str,
-    identity: &str,
-    act_cmd: &ActCommand,
-) -> Result<(), String> {
-    let voyage = resolve_voyage(storage, voyage_ref)?;
-
+fn cmd_act(storage: &Storage, voyage: &Voyage, act_cmd: &ActCommand) -> Result<(), String> {
     if matches!(voyage.status, VoyageStatus::Completed { .. }) {
         return Err(format!(
             "voyage {} is already completed",
@@ -493,12 +517,11 @@ fn cmd_act(
         ));
     }
 
-    let gh_config = gh_config_dir(identity)?;
+    let gh_config = gh_config_dir(&voyage.identity)?;
     let act = act(act_cmd, &gh_config)?;
 
     let action = Action {
         id: Uuid::new_v4(),
-        identity: identity.to_string(),
         kind: act,
         performed_at: Timestamp::now(),
     };
@@ -509,7 +532,6 @@ fn cmd_act(
 
     let short_id = &voyage.id.to_string()[..8];
     eprintln!("Action recorded for voyage {short_id}");
-    eprintln!("  as: {identity}");
     eprintln!("  {}", format_act(&action.kind));
 
     Ok(())
@@ -846,10 +868,9 @@ fn format_act(act: &ActionKind) -> String {
     }
 }
 
-fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
-    let voyage = resolve_voyage(storage, voyage_ref)?;
-
+fn cmd_log(storage: &Storage, voyage: &Voyage) -> Result<(), String> {
     println!("Voyage: {}", voyage.intent);
+    println!("Identity: {}", voyage.identity);
     println!("Created: {}", voyage.created_at);
     match &voyage.status {
         VoyageStatus::Active => println!("Status: active"),
@@ -899,7 +920,6 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
             }
             LogbookEntry::Action(a) => {
                 println!("── Action {} ── {}", i + 1, a.performed_at);
-                println!("  as: {}", a.identity);
                 println!("  {}", format_act(&a.kind));
                 println!();
             }
@@ -909,9 +929,7 @@ fn cmd_log(storage: &Storage, voyage_ref: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_complete(storage: &Storage, voyage_ref: &str, summary: Option<&str>) -> Result<(), String> {
-    let mut voyage = resolve_voyage(storage, voyage_ref)?;
-
+fn cmd_complete(storage: &Storage, voyage: &Voyage, summary: Option<&str>) -> Result<(), String> {
     if matches!(voyage.status, VoyageStatus::Completed { .. }) {
         return Err(format!(
             "voyage {} is already completed",
@@ -919,6 +937,7 @@ fn cmd_complete(storage: &Storage, voyage_ref: &str, summary: Option<&str>) -> R
         ));
     }
 
+    let mut voyage = voyage.clone();
     voyage.status = VoyageStatus::Completed {
         completed_at: Timestamp::now(),
         summary: summary.map(String::from),

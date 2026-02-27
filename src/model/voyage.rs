@@ -9,6 +9,12 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct Voyage {
     pub id: Uuid,
+
+    /// The identity sailing this voyage (e.g. "john-agent", "dyreby").
+    /// Set at creation — from `--as` or the configured default identity.
+    /// Inherited by all commands on this voyage.
+    pub identity: String,
+
     pub kind: VoyageKind,
     pub intent: String,
     pub created_at: Timestamp,

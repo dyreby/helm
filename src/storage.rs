@@ -216,6 +216,7 @@ mod tests {
     fn sample_voyage() -> Voyage {
         Voyage {
             id: Uuid::new_v4(),
+            identity: "john-agent".into(),
             kind: VoyageKind::OpenWaters,
             intent: "Fix the widget".into(),
             created_at: Timestamp::now(),
@@ -262,7 +263,6 @@ mod tests {
     fn sample_action() -> Action {
         Action {
             id: Uuid::new_v4(),
-            identity: "john-agent".into(),
             kind: ActionKind::Push {
                 branch: "main".into(),
                 sha: "abc1234".into(),
