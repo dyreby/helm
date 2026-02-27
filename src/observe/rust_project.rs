@@ -183,7 +183,10 @@ mod tests {
         let Sighting::Files {
             listings,
             contents: _,
-        } = observe_rust_project(dir.path());
+        } = observe_rust_project(dir.path())
+        else {
+            unreachable!()
+        };
 
         // Root should have src/, docs/, Cargo.toml, README.md, etc. but not target/.
         let root_listing = listings.iter().find(|s| s.path == dir.path()).unwrap();
@@ -202,7 +205,9 @@ mod tests {
     #[test]
     fn reads_only_docs() {
         let dir = setup_rust_project();
-        let Sighting::Files { contents, .. } = observe_rust_project(dir.path());
+        let Sighting::Files { contents, .. } = observe_rust_project(dir.path()) else {
+            unreachable!()
+        };
 
         let paths: Vec<String> = contents
             .iter()
@@ -229,7 +234,9 @@ mod tests {
     #[test]
     fn skips_target_directory() {
         let dir = setup_rust_project();
-        let Sighting::Files { listings, contents } = observe_rust_project(dir.path());
+        let Sighting::Files { listings, contents } = observe_rust_project(dir.path()) else {
+            unreachable!()
+        };
 
         assert!(!listings.iter().any(|s| s.path.ends_with("target")));
         assert!(!contents.iter().any(|i| {
@@ -246,7 +253,10 @@ mod tests {
         let Sighting::Files {
             listings,
             contents: _,
-        } = observe_rust_project(dir.path());
+        } = observe_rust_project(dir.path())
+        else {
+            unreachable!()
+        };
 
         // src/ directory should have its own listing.
         let src_listing = listings

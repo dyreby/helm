@@ -194,18 +194,33 @@ enum Mark {
         root: PathBuf,
     },
 
-    // ── Planned ──
+    /// A GitHub pull request.
+    ///
+    /// Focus controls depth: summary for metadata,
+    /// diff/comments/reviews/checks/files for details.
+    /// Defaults to summary when no focus is specified.
+    GitHubPullRequest {
+        number: u64,
+        focus: Vec<PullRequestFocus>,   // Summary, Files, Checks, Diff, Comments, Reviews
+    },
 
-    /// GitHub: PRs, issues, checks, comments.
+    /// A GitHub issue.
     ///
-    /// Enough structure to distinguish "looked at PR #42 metadata"
-    /// from "read the inline review comments on PR #42."
+    /// Focus controls depth: summary for metadata, comments for discussion.
+    /// Defaults to summary when no focus is specified.
+    GitHubIssue {
+        number: u64,
+        focus: Vec<IssueFocus>,         // Summary, Comments
+    },
+
+    /// A GitHub repository.
     ///
-    /// Sketch — actual types to be worked through when building this mark.
-    // GitHub {
-    //     target: GitHubTarget,       // PullRequest(u64) | Issue(u64) | Repository
-    //     focus: Vec<GitHubFocus>,    // Diff | InlineComments | Checks | Comments | Approvals
-    // },
+    /// Lists open issues, pull requests, or both.
+    GitHubRepository {
+        focus: Vec<RepositoryFocus>,    // Issues, PullRequests
+    },
+
+    // ── Planned ──
 
     /// Human-provided context with no system-observable source.
     ///
@@ -244,9 +259,15 @@ enum Sighting {
         contents: Vec<FileContents>,
     },
 
-    // ── Planned ──
+    /// Results from observing a GitHub pull request.
+    /// Boxed to keep variant sizes balanced.
+    GitHubPullRequest(Box<PullRequestSighting>),
 
-    // GitHub { ... },
+    /// Results from observing a GitHub issue.
+    GitHubIssue(Box<IssueSighting>),
+
+    /// Results from observing a GitHub repository.
+    GitHubRepository(Box<RepositorySighting>),
 }
 
 /// A directory listing: what's at this path.
@@ -515,12 +536,11 @@ Commands are how Helm fetches data; marks describe what Helm is looking at.
 
 - **Files** — directory listings with metadata, file contents. Implemented.
 - **RustProject** — full project tree, documentation files. Implemented.
-- **GitHub** — PR/issue metadata, check summaries, diffs, comment bodies, threads. Planned.
+- **GitHub** — PR/issue metadata, check summaries, diffs, comment bodies, inline review threads. Implemented as three marks: `GitHubPullRequest`, `GitHubIssue`, `GitHubRepository`, each with domain-specific focus items.
 - **Context** — human-provided context with no system-observable source. Planned.
 - **Web** — status, headers, response bodies. Future.
 
 Web-based kinds graduate to their own domain when their observation semantics are rich enough.
-GitHub is the first domain that graduated.
 
 ## The Agent Contract
 
@@ -576,6 +596,9 @@ helm voyage list
 
 helm --voyage <id> observe files [--list <dir>...] [--read <file>...]
 helm --voyage <id> observe rust-project <path>
+helm --voyage <id> observe github-pr <number> [--focus summary|files|checks|diff|comments|reviews]
+helm --voyage <id> observe github-issue <number> [--focus summary|comments]
+helm --voyage <id> observe github-repo [--focus issues|pull-requests]
 
 helm --voyage <id> record --reading <text> [--observation <file>...]
 
