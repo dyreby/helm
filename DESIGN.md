@@ -13,9 +13,9 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | Term | What it means |
 |------|---------------|
 | **Voyage** | A unit of work with a logbook |
-| **Logbook** | Append-only record of a voyage's bearings and actions |
+| **Logbook** | Append-only record of a voyage's entries (steer actions, logged states) |
 | **Observation** | What you looked at (`Observe` variant) + what came back (payload) + timestamp |
-| **Bearing** | Curated observations + summary. Sealed into a log entry on steer/log |
+| **Bearing** | Sealed observations + summary. Recorded in each log entry on steer/log |
 | **Working set** | Observations accumulating between steer/log commands |
 | **The hold** | Per-voyage content-addressed storage for large payloads |
 
@@ -34,7 +34,7 @@ Only `steer` and `log` write to the logbook. That's the invariant.
 | Noun | Verb | Example |
 |------|------|---------|
 | **Observation** | observe | "Observe an issue" — look at it, capture what came back |
-| **Bearing** | seal | "Seal a bearing" — curate the working set of observations at decision time |
+| **Bearing** | seal | "Seal a bearing" — collapse the working set of observations at decision time |
 | **Voyage** | start / end | "Start a voyage" / "End a voyage" |
 
 The logbook **records** — that's its job, not the caller's verb. You observe, steer, and log. The logbook captures what happened.
@@ -59,7 +59,7 @@ Execute an intent-based domain action that mutates collaborative state. One invo
 
 What happens atomically:
 
-1. Curate the working set into a bearing
+1. Seal the working set into a bearing
 2. Execute the action
 3. Record one logbook entry
 4. Clear the working set
@@ -99,9 +99,9 @@ Steer actions are typed by semantic intent, not by API call shape. The logbook r
 
 GitHub is the current collaborative boundary. The model supports other boundaries in the future without design changes.
 
-## Working Set and Bearing Curation
+## Working Set and Bearing
 
-Observations accumulate in the working set between steer/log commands. When either is called, helm curates the working set into a bearing:
+Observations accumulate in the working set between steer/log commands. When either is called, helm seals the working set into a bearing:
 
 - Deduplicate by target (keep the newest observation when the same thing was observed multiple times)
 - Keep everything since last steer/log
@@ -109,7 +109,7 @@ Observations accumulate in the working set between steer/log commands. When eith
 - Seal into the log entry's bearing
 - Clear the working set
 
-No manual curation step. The invariant: any command that writes to the logbook seals and clears.
+No manual step. The invariant: any command that writes to the logbook seals and clears.
 
 ## The Hold
 
@@ -247,7 +247,7 @@ struct Observation {
 ```rust
 /// Orientation at the moment of decision.
 ///
-/// Curated from the working set when steer or log is called.
+/// Sealed from the working set when steer or log is called.
 /// One bearing per log entry — many observations feed into
 /// one understanding of where you are.
 struct Bearing {
@@ -307,7 +307,6 @@ enum VoyageStatus {
 
 ```
 ~/.helm/
-  config.toml
   voyages/
     <uuid>/
       voyage.json
@@ -334,7 +333,7 @@ Specific flags and arguments are implementation detail, defined when each subcom
 
 Identity is recorded per log entry, not per voyage. Multiple agents or people can steer the same voyage — the logbook records who did what.
 
-How identity is determined (config, flags, environment) is implementation detail.
+Identity is required explicitly via `--as` on every `steer` and `log` invocation. No defaults, no config file.
 
 ## Open Questions
 

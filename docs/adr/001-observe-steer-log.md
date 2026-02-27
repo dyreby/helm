@@ -28,9 +28,9 @@ Replace the observe/bearing/action model with three commands: **observe**, **ste
 
 Only steer and log write to the logbook. That's the invariant.
 
-### Working set and automatic bearing curation
+### Working set and automatic bearing sealing
 
-Observations accumulate between steer/log commands. When either is called, helm curates the working set into a bearing automatically — deduplicating, capping size, spilling large payloads to the hold. No manual bearing-taking step.
+Observations accumulate between steer/log commands. When either is called, helm seals the working set into a bearing automatically — deduplicating, capping size, spilling large payloads to the hold. No manual bearing-taking step.
 
 ### Collaborative state as the boundary
 
@@ -42,7 +42,7 @@ Steer actions represent meaningful state transitions that cross the collaborativ
 |------|---------------|
 | **Voyage** | A unit of work with a logbook |
 | **Observation** | What you looked at + what came back + timestamp |
-| **Bearing** | Curated observations + summary, sealed into a log entry |
+| **Bearing** | Sealed observations + summary, recorded in each log entry |
 | **Working set** | Observations accumulating between steer/log commands |
 | **The hold** | Per-voyage content-addressed storage for large payloads |
 | **Steer** | Intent-based action that mutates collaborative state |
