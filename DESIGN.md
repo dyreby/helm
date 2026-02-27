@@ -55,18 +55,18 @@ The `Observe` enum is the extension surface for new observation types. Add a var
 
 ### `helm steer <intent>`
 
-Execute an intent-based domain action that mutates collaborative state. One invocation = one logbook entry.
+Perform an intent-based domain action that mutates collaborative state. One invocation = one logbook entry.
 
 What happens atomically:
 
 1. Seal the working set into a bearing
-2. Execute the action
+2. Perform the action
 3. Record one logbook entry
 4. Clear the working set
 
 A single steer may perform multiple API calls internally (e.g., post a comment + add a label), but it logs as one semantic action.
 
-Steer subcommands are the extension surface for new capabilities. Each is a deterministic flow with a known shape. The stable contract is: seal, execute, record, clear.
+Steer subcommands are the extension surface for new capabilities. Each is a deterministic flow with a known shape. The stable contract is: seal, perform, record, clear.
 
 Initial steer subcommands:
 
