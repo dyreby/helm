@@ -1,4 +1,4 @@
-//! Action types: immutable records of something that changed the world.
+//! Action types: immutable records of operations Helm performed.
 //!
 //! One action = one kind. Each is a distinct moment in time,
 //! recorded in the logbook as it happened.
@@ -9,9 +9,9 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A single, immutable record of something that changed the world.
+/// A single, immutable record of an operation Helm performed.
 ///
-/// Actions carry the minimum data needed to identify what happened.
+/// Carries the minimum data needed to identify what happened.
 /// Content (PR bodies, comment text) lives on GitHub and can be
 /// observed through bearings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
