@@ -69,5 +69,3 @@ pub enum ObserveTarget {
     #[command(name = "github-repo")]
     GitHubRepository,
 }
-
-

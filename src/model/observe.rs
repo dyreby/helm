@@ -47,5 +47,3 @@ pub enum Observe {
     /// Always fetches open issues and pull requests.
     GitHubRepository,
 }
-
-
