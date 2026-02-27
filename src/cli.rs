@@ -107,8 +107,6 @@ pub enum Command {
     ///
     /// Same seal-and-clear behavior as steer. Use when the voyage reaches
     /// a state worth recording but there's nothing to change in the world.
-    ///
-    /// Not yet implemented — coming in #101.
     Log {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
         #[arg(long)]
@@ -285,7 +283,15 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             let voyage = resolve_voyage(storage, &voyage)?;
             cmd_steer(storage, &voyage, &identity, &summary, &action)
         }
-        Command::Log { .. } => Err("log not yet implemented".to_string()),
+        Command::Log {
+            voyage,
+            identity,
+            summary,
+            status,
+        } => {
+            let voyage = resolve_voyage(storage, &voyage)?;
+            cmd_log(storage, &voyage, &identity, &summary, &status)
+        }
     }
 }
 
@@ -440,6 +446,39 @@ fn cmd_steer(
         .map_err(|e| format!("failed to clear working set: {e}"))?;
 
     eprintln!("Steered: {}", describe_steer_action(action));
+    Ok(())
+}
+
+fn cmd_log(
+    storage: &Storage,
+    voyage: &Voyage,
+    identity: &str,
+    summary: &str,
+    status: &str,
+) -> Result<(), String> {
+    // 1. Curate a bearing from the working set — seal what we knew going in.
+    let observations = storage
+        .load_working(voyage.id)
+        .map_err(|e| format!("failed to load working set: {e}"))?;
+    let bearing = bearing::seal(observations, summary.to_string());
+
+    // 2. Record one logbook entry. No collaborative state is mutated.
+    let entry = LogbookEntry {
+        bearing,
+        author: identity.to_string(),
+        timestamp: Timestamp::now(),
+        kind: EntryKind::Log(status.to_string()),
+    };
+    storage
+        .append_entry(voyage.id, &entry)
+        .map_err(|e| format!("failed to append logbook entry: {e}"))?;
+
+    // 3. Clear the working set.
+    storage
+        .clear_working(voyage.id)
+        .map_err(|e| format!("failed to clear working set: {e}"))?;
+
+    eprintln!("Logged: {status}");
     Ok(())
 }
 

@@ -45,8 +45,6 @@ pub enum EntryKind {
     /// A steering action: mutated collaborative state.
     Steer(Steer),
 
-    // TODO: remove once log (#101) is wired to the CLI.
-    #[allow(dead_code)]
     /// A logged state: recorded without mutation.
     Log(String),
 }
