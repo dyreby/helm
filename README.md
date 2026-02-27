@@ -3,7 +3,7 @@
 A personal, Rust-based CLI for structured collaborative software work.
 
 Helm observes the world, acts upon it, and records everything in an append-only logbook.
-Three commands — **observe**, **steer**, **log** — and one invariant: only steer and log write to the logbook.
+Three commands (**observe**, **steer**, **log**) and one invariant: only steer and log write to the logbook.
 
 ```
 helm observe issue 42        # look at something, add to the working set
@@ -15,8 +15,8 @@ Work is organized into **voyages** — units of work, each with its own logbook.
 The logbook tells the story: what was observed, what decisions were made, what changed in the world.
 
 I'm working on a [collaboration framework](https://github.com/dyreby/collaboration-framework) that started as a way to work better with a coding agent and evolved into something broader about narrowing the gap between intent and understanding.
-The concepts work, but the mechanism — shared concepts injected into an agent's system prompt — kept producing friction.
-Helm picks up where that approach ran into its limits — replacing prompt engineering with structured workflows.
+The concepts work, but the mechanism (shared concepts injected into an agent's system prompt) kept producing friction.
+Helm picks up where that approach ran into its limits, replacing prompt engineering with structured workflows.
 
 Inspired in part by John Boyd's OODA loop, Michael Singer's model of reality as a series of moments unfolding in front of us, and my dad's love of sailing.
 
