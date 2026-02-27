@@ -3,8 +3,7 @@
 use std::{fs, path::PathBuf};
 
 use crate::{
-    bearing,
-    identity,
+    bearing, identity,
     model::{Observe, Voyage},
     storage::Storage,
 };

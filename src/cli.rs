@@ -23,8 +23,7 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{
-    bearing,
-    identity,
+    bearing, identity,
     model::{CommentTarget, EntryKind, LogbookEntry, Steer, Voyage},
     steer,
     storage::Storage,
