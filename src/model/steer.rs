@@ -6,15 +6,20 @@ use serde::{Deserialize, Serialize};
 ///
 /// Each variant is a steer subcommand — a deterministic flow
 /// with a known shape. This enum grows as helm learns new capabilities.
-///
-/// Variant fields are defined when each subcommand is built.
-// TODO: remove once steer (#100) is wired to the CLI.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Steer {
-    /// Comment on an issue or PR.
-    Comment,
+    /// Comment on an issue, PR, or inline review thread.
+    Comment {
+        /// Issue or PR number.
+        number: u64,
+
+        /// Comment body.
+        body: String,
+
+        /// Where the comment lands.
+        target: CommentTarget,
+    },
 
     /// Create an issue.
     CreateIssue,
@@ -37,9 +42,23 @@ pub enum Steer {
     /// Request reviewers on a PR.
     RequestReview,
 
-    /// Reply to an inline code review comment on a PR.
-    ReplyInline,
-
     /// Merge a PR.
     MergePullRequest,
+}
+
+/// Where a comment lands — routes to the correct `gh` command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CommentTarget {
+    /// A top-level comment on an issue.
+    Issue,
+
+    /// A top-level comment on a pull request.
+    PullRequest,
+
+    /// A reply to an inline code review comment.
+    ReviewFeedback {
+        /// The comment being replied to.
+        comment_id: u64,
+    },
 }

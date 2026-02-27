@@ -11,8 +11,6 @@ use crate::model::LogbookEntry;
 
 use super::{Result, Storage, StorageError};
 
-// TODO: remove once steer (#100) and log (#101) are wired to the CLI.
-#[allow(dead_code)]
 impl Storage {
     /// Appends a logbook entry to a voyage's logbook.
     pub fn append_entry(&self, voyage_id: Uuid, entry: &LogbookEntry) -> Result<()> {
@@ -31,6 +29,8 @@ impl Storage {
     }
 
     /// Loads all logbook entries for a voyage.
+    // TODO: remove once log (#101) is wired to the CLI.
+    #[allow(dead_code)]
     pub fn load_logbook(&self, voyage_id: Uuid) -> Result<Vec<LogbookEntry>> {
         let path = self.voyage_dir(voyage_id).join("logbook.jsonl");
         if !path.exists() {
@@ -72,7 +72,6 @@ mod tests {
     fn sample_voyage() -> Voyage {
         Voyage {
             id: Uuid::new_v4(),
-            identity: "john-agent".into(),
             intent: "Fix the widget".into(),
             created_at: Timestamp::now(),
             status: VoyageStatus::Active,
@@ -91,7 +90,11 @@ mod tests {
             bearing: sample_bearing(),
             author: "john-agent".into(),
             timestamp: Timestamp::now(),
-            kind: EntryKind::Steer(Steer::Comment),
+            kind: EntryKind::Steer(Steer::Comment {
+                number: 42,
+                body: "Here's my plan.".into(),
+                target: CommentTarget::Issue,
+            }),
         }
     }
 
@@ -119,7 +122,10 @@ mod tests {
 
         let entries = storage.load_logbook(voyage.id).unwrap();
         assert_eq!(entries.len(), 2);
-        assert!(matches!(entries[0].kind, EntryKind::Steer(Steer::Comment)));
+        assert!(matches!(
+            entries[0].kind,
+            EntryKind::Steer(Steer::Comment { .. })
+        ));
         assert!(matches!(entries[1].kind, EntryKind::Log(_)));
     }
 

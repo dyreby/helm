@@ -82,7 +82,6 @@ mod tests {
     fn sample_voyage() -> Voyage {
         Voyage {
             id: Uuid::new_v4(),
-            identity: "john-agent".into(),
             intent: "Fix the widget".into(),
             created_at: Timestamp::now(),
             status: VoyageStatus::Active,

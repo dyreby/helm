@@ -21,7 +21,7 @@ pub use payload::{
     GitHubIssueSummary, GitHubPullRequestSummary, GitHubSummary, IssuePayload, Payload,
     PullRequestPayload, RepositoryPayload, ReviewComment,
 };
-pub use steer::Steer;
+pub use steer::{CommentTarget, Steer};
 pub use voyage::{Voyage, VoyageStatus};
 
 /// A single entry in the logbook, serialized as one line of JSONL.
@@ -29,8 +29,6 @@ pub use voyage::{Voyage, VoyageStatus};
 /// Tagged enum so each line is self-describing when read back.
 /// Identity is recorded per entry — multiple agents or people can
 /// steer the same voyage.
-// TODO: remove once steer (#100) and log (#101) are wired to the CLI.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogbookEntry {
@@ -41,14 +39,14 @@ pub struct LogbookEntry {
 }
 
 /// What kind of logbook entry this is.
-// TODO: remove once steer (#100) and log (#101) are wired to the CLI.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum EntryKind {
     /// A steering action: mutated collaborative state.
     Steer(Steer),
 
+    // TODO: remove once log (#101) is wired to the CLI.
+    #[allow(dead_code)]
     /// A logged state: recorded without mutation.
     Log(String),
 }

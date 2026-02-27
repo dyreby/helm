@@ -9,13 +9,6 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct Voyage {
     pub id: Uuid,
-
-    /// The identity sailing this voyage (e.g. `"john-agent"`, `"dyreby"`).
-    ///
-    /// Set at creation — from `--as` or the configured default identity.
-    /// Inherited by commands on this voyage that need GitHub auth.
-    pub identity: String,
-
     pub intent: String,
     pub created_at: Timestamp,
     pub status: VoyageStatus,
