@@ -8,38 +8,29 @@
 //! - `helm voyage new|list` — lifecycle management, no voyage context needed.
 //! - `helm --voyage <id> <command>` — everything else, operating within a voyage.
 //!
-//! Identity is set at voyage creation and inherited by all commands.
 //! The `--voyage` flag takes a full UUID or unambiguous prefix.
 
-mod actions;
 mod format;
 
+use std::fs;
 use std::path::PathBuf;
-use std::{fs, io};
-
-// Trait must be in scope for `.read_to_string()` on stdin.
-use io::Read;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::model::{
-    Action, IssueFocus, LogbookEntry, Mark, Observation, PullRequestFocus, RepositoryFocus, Voyage,
-    VoyageKind, VoyageStatus,
-};
+use crate::model::{IssueFocus, Observe, PullRequestFocus, RepositoryFocus, Voyage, VoyageStatus};
 use crate::{bearing, storage::Storage};
 
-use actions::perform;
-use format::{format_action, format_issue_focuses, format_pr_focuses, format_repo_focuses};
+use format::{format_issue_focuses, format_pr_focuses, format_repo_focuses};
 
 /// Helm — navigate your work.
 #[derive(Debug, Parser)]
 #[command(name = "helm", after_long_help = WORKFLOW_HELP)]
 pub struct Cli {
     /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
-    /// Required for observe, bearing, action, complete, and log.
+    /// Required for observe, steer, and log.
     #[arg(long, global = true)]
     voyage: Option<String>,
 
@@ -47,31 +38,17 @@ pub struct Cli {
     pub command: Command,
 }
 
-const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
-  1. helm voyage new --as john-agent --kind resolve-issue "Resolve #42: fix widget crash"
+const WORKFLOW_HELP: &str = r#"Workflow: advancing an issue
+  1. helm voyage new --as john-agent "Resolve #42: fix widget crash"
      → prints a voyage ID (e.g. a3b0fc12)
-  2. Do the work — fix the bug, open the PR, get it merged.
-  3. helm --voyage a3b complete --summary "Fixed null check in widget init"
+  2. helm --voyage a3b observe github-issue 42 --focus summary --focus comments
+  3. helm --voyage a3b steer comment 42 "Here's my plan: ..."
+  4. helm --voyage a3b voyage end --status "Merged PR #45"
 
-Stopping mid-voyage? Take a bearing so the next session has context:
-  helm --voyage a3b observe rust-project . --out obs.json
-  helm --voyage a3b observe file-contents --read src/widget.rs --out widget.json
-  helm --voyage a3b bearing --reading "Halfway through, refactoring widget module" --observation obs.json --observation widget.json
-
-Observe GitHub:
+Observe:
+  helm --voyage a3b observe file-contents --read src/widget.rs
   helm --voyage a3b observe github-pr 42 --focus summary --focus diff
-  helm --voyage a3b observe github-issue 10 --focus comments
-  helm --voyage a3b observe github-repo --focus issues
-
-Perform actions:
-  helm --voyage a3b action commit --message "Fix null check in widget init"
-  helm --voyage a3b action push --branch fix-widget
-  helm --voyage a3b action create-pull-request --branch fix-widget --title "Fix widget"
-  helm --voyage a3b action merge-pull-request 45
-
-Check on voyages:
-  helm voyage list              → see active voyages
-  helm --voyage a3b log         → see the trail of bearings and actions"#;
+  helm --voyage a3b observe github-repo --focus issues"#;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -81,10 +58,10 @@ pub enum Command {
         command: VoyageCommand,
     },
 
-    /// Observe the world and output what was seen.
+    /// Observe the world and add to the working set.
     ///
     /// Pure read, no side effects, repeatable.
-    /// The observation is written as JSON to `--out` (if given) or stdout.
+    /// The observation JSON is written to `--out` (if given) or stdout.
     /// A human-readable summary is printed to stderr when writing to a file.
     /// Requires `--voyage`.
     Observe {
@@ -96,171 +73,39 @@ pub enum Command {
         out: Option<PathBuf>,
     },
 
-    /// Take a bearing: attach a reading to one or more observations.
+    /// Steer: execute an intent-based action that mutates collaborative state.
     ///
-    /// Reads observations from `--observation` files or stdin (single observation),
-    /// attaches the reading, and writes the bearing to the logbook.
-    ///
-    /// Bearings exist for continuity, not just documentation.
-    /// Take one when you'd need context if you had to stop and come back
-    /// in a new session. If you're finishing in this session, skip the bearing
-    /// and use `helm --voyage <id> complete --summary` instead.
+    /// Seals a bearing from the working set, executes the action,
+    /// records one logbook entry, and clears the working set.
     /// Requires `--voyage`.
-    Bearing {
-        /// Your reading of the observed mark.
-        #[arg(long)]
-        reading: String,
-
-        /// Paths to observation JSON files (from `helm observe --out`).
-        /// Pass multiple times for multi-observation bearings.
-        /// Reads a single observation from stdin if not provided.
-        #[arg(long)]
-        observation: Vec<PathBuf>,
-    },
-
-    /// Perform an action.
     ///
-    /// Each action performs a single operation (push, create PR, merge, comment, etc.)
-    /// and records it in the logbook.
-    /// Identity is inherited from the voyage.
-    /// The logbook captures what happened, not what was planned —
-    /// failed operations are not recorded.
-    /// Requires `--voyage`.
-    Action {
-        /// The action to perform.
+    /// Not yet implemented — coming in a future mission.
+    Steer {
         #[command(subcommand)]
-        action: ActionCommand,
+        action: SteerAction,
     },
 
-    /// Mark a voyage as completed.
+    /// Log a deliberate state without mutating collaborative state.
     ///
-    /// Updates the voyage status to completed.
-    /// The summary captures the outcome — what was accomplished or learned.
-    /// If the voyage finishes in a single session, this is often the only
-    /// record needed (no bearing required).
+    /// Same seal-and-clear behavior as steer. Use when the voyage reaches
+    /// a state worth recording but there's nothing to change in the world.
     /// Requires `--voyage`.
-    Complete {
-        /// Summary of what was accomplished or learned.
-        #[arg(long)]
-        summary: Option<String>,
+    ///
+    /// Not yet implemented — coming in a future mission.
+    Log {
+        /// Freeform status to record.
+        status: String,
     },
-
-    /// Show a voyage's logbook: the trail of bearings and actions.
-    ///
-    /// Displays observations and readings for each bearing,
-    /// and identity/act for each action.
-    /// The logbook tells the story through readings and actions.
-    /// Requires `--voyage`.
-    Log,
 }
 
-/// Action subcommands — one per kind of action.
+/// Steer subcommands (stub — fields defined when each is built).
 #[derive(Debug, Subcommand)]
-pub enum ActionCommand {
-    /// Commit staged changes.
-    ///
-    /// Commits whatever is currently staged.
-    /// Records the resulting commit SHA in the logbook.
-    Commit {
-        /// Commit message.
-        #[arg(long)]
-        message: String,
-    },
-
-    /// Push commits to a branch.
-    Push {
-        /// Branch name.
-        #[arg(long)]
-        branch: String,
-    },
-
-    /// Create a pull request.
-    CreatePullRequest {
-        /// Branch to create the PR from.
-        #[arg(long)]
-        branch: String,
-
-        /// PR title.
-        #[arg(long)]
-        title: String,
-
-        /// PR body.
-        #[arg(long)]
-        body: Option<String>,
-
-        /// Base branch (defaults to main).
-        #[arg(long, default_value = "main")]
-        base: String,
-
-        /// Request review from these users.
-        #[arg(long)]
-        reviewer: Vec<String>,
-    },
-
-    /// Merge a pull request (squash merge).
-    MergePullRequest {
-        /// PR number.
+pub enum SteerAction {
+    /// Comment on an issue or PR.
+    Comment {
+        /// Issue or PR number.
         number: u64,
-    },
-
-    /// Comment on a pull request.
-    CommentOnPullRequest {
-        /// PR number.
-        number: u64,
-
         /// Comment body.
-        #[arg(long)]
-        body: String,
-    },
-
-    /// Reply to an inline review comment on a pull request.
-    ReplyOnPullRequest {
-        /// PR number.
-        number: u64,
-
-        /// The review comment ID to reply to.
-        #[arg(long)]
-        comment_id: u64,
-
-        /// Reply body.
-        #[arg(long)]
-        body: String,
-    },
-
-    /// Request review on a pull request.
-    RequestReview {
-        /// PR number.
-        number: u64,
-
-        /// Users to request review from.
-        #[arg(long, required = true)]
-        reviewer: Vec<String>,
-    },
-
-    /// Create a new issue.
-    CreateIssue {
-        /// Issue title.
-        #[arg(long)]
-        title: String,
-
-        /// Issue body.
-        #[arg(long)]
-        body: Option<String>,
-    },
-
-    /// Close an issue.
-    CloseIssue {
-        /// Issue number.
-        number: u64,
-    },
-
-    /// Comment on an issue.
-    CommentOnIssue {
-        /// Issue number.
-        number: u64,
-
-        /// Comment body.
-        #[arg(long)]
         body: String,
     },
 }
@@ -271,39 +116,23 @@ pub enum VoyageCommand {
     New {
         /// Identity for this voyage (e.g. "john-agent").
         /// All commands on this voyage inherit this identity for GitHub auth.
-        /// When omitted, system default `gh` auth is used.
+        /// When omitted, the configured default identity is used.
         #[arg(long = "as")]
         identity: Option<String>,
 
         /// What this voyage is about.
         intent: String,
-
-        /// The kind of voyage.
-        #[arg(long, value_enum, default_value_t = VoyageKindArg::OpenWaters)]
-        kind: VoyageKindArg,
     },
 
     /// List active voyages.
     List,
-}
 
-/// CLI-facing voyage kind, mapped to the domain `VoyageKind`.
-#[derive(Debug, Clone, ValueEnum)]
-pub enum VoyageKindArg {
-    /// General-purpose voyage.
-    OpenWaters,
-
-    /// Resolve a GitHub issue.
-    ResolveIssue,
-}
-
-impl VoyageKindArg {
-    fn to_domain(&self) -> VoyageKind {
-        match self {
-            Self::OpenWaters => VoyageKind::OpenWaters,
-            Self::ResolveIssue => VoyageKind::ResolveIssue,
-        }
-    }
+    /// End a voyage.
+    End {
+        /// Freeform status: what was accomplished, learned, or left open.
+        #[arg(long)]
+        status: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -322,7 +151,7 @@ pub enum ObserveSource {
         /// Root directory to walk.
         root: PathBuf,
 
-        /// Directory names to skip at any depth (e.g. "target", "`node_modules`").
+        /// Directory names to skip at any depth (e.g. `"target"`, `"node_modules"`).
         #[arg(long)]
         skip: Vec<String>,
 
@@ -449,36 +278,21 @@ pub fn run(config: &Config, storage: &Storage) -> Result<(), String> {
 
     match cli.command {
         Command::Voyage { command } => match command {
-            VoyageCommand::New {
-                identity,
-                intent,
-                kind,
-            } => cmd_new(config, storage, identity.as_deref(), &intent, &kind),
+            VoyageCommand::New { identity, intent } => {
+                cmd_new(config, storage, identity.as_deref(), &intent)
+            }
             VoyageCommand::List => cmd_list(storage),
+            VoyageCommand::End { status } => {
+                let voyage = require_voyage(storage, cli.voyage.as_deref())?;
+                cmd_end(storage, &voyage, status.as_deref())
+            }
         },
         Command::Observe { ref source, out } => {
             let voyage = require_voyage(storage, cli.voyage.as_deref())?;
             cmd_observe(&voyage, source, out)
         }
-        Command::Bearing {
-            reading,
-            observation,
-        } => {
-            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
-            cmd_bearing(storage, &voyage, &reading, &observation)
-        }
-        Command::Action { action } => {
-            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
-            cmd_action(storage, &voyage, &action)
-        }
-        Command::Complete { summary } => {
-            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
-            cmd_complete(storage, &voyage, summary.as_deref())
-        }
-        Command::Log => {
-            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
-            cmd_log(storage, &voyage)
-        }
+        Command::Steer { .. } => Err("steer not yet implemented".to_string()),
+        Command::Log { .. } => Err("log not yet implemented".to_string()),
     }
 }
 
@@ -493,14 +307,12 @@ fn cmd_new(
     storage: &Storage,
     identity: Option<&str>,
     intent: &str,
-    kind: &VoyageKindArg,
 ) -> Result<(), String> {
     let identity = identity.unwrap_or(&config.default_identity);
 
     let voyage = Voyage {
         id: Uuid::new_v4(),
         identity: identity.to_string(),
-        kind: kind.to_domain(),
         intent: intent.to_string(),
         created_at: Timestamp::now(),
         status: VoyageStatus::Active,
@@ -520,24 +332,17 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
         .map_err(|e| format!("failed to list voyages: {e}"))?;
 
     if voyages.is_empty() {
-        println!("No active voyages");
+        println!("No voyages");
         return Ok(());
     }
 
     for v in &voyages {
         let status = match v.status {
             VoyageStatus::Active => "active",
-            VoyageStatus::Completed { .. } => "completed",
-        };
-        let kind = match v.kind {
-            VoyageKind::OpenWaters => "open-waters",
-            VoyageKind::ResolveIssue => "resolve-issue",
+            VoyageStatus::Ended { .. } => "ended",
         };
         let short_id = &v.id.to_string()[..8];
-        println!(
-            "{short_id}  [{status}] [{kind}] [{}]  {}",
-            v.identity, v.intent
-        );
+        println!("{short_id}  [{status}] [{}]  {}", v.identity, v.intent);
     }
 
     Ok(())
@@ -548,13 +353,13 @@ fn cmd_observe(
     source: &ObserveSource,
     out: Option<PathBuf>,
 ) -> Result<(), String> {
-    let (mark, needs_gh) = match source {
+    let (target, needs_gh) = match source {
         ObserveSource::FileContents { read } => {
             if read.is_empty() {
                 return Err("specify at least one --read".to_string());
             }
             (
-                Mark::FileContents {
+                Observe::FileContents {
                     paths: read.clone(),
                 },
                 false,
@@ -565,30 +370,30 @@ fn cmd_observe(
             skip,
             max_depth,
         } => (
-            Mark::DirectoryTree {
+            Observe::DirectoryTree {
                 root: root.clone(),
                 skip: skip.clone(),
                 max_depth: *max_depth,
             },
             false,
         ),
-        ObserveSource::RustProject { path } => (Mark::RustProject { root: path.clone() }, false),
+        ObserveSource::RustProject { path } => (Observe::RustProject { root: path.clone() }, false),
         ObserveSource::GitHubPullRequest { number, focus } => (
-            Mark::GitHubPullRequest {
+            Observe::GitHubPullRequest {
                 number: *number,
                 focus: focus.iter().map(PrFocusArg::to_domain).collect(),
             },
             true,
         ),
         ObserveSource::GitHubIssue { number, focus } => (
-            Mark::GitHubIssue {
+            Observe::GitHubIssue {
                 number: *number,
                 focus: focus.iter().map(IssueFocusArg::to_domain).collect(),
             },
             true,
         ),
         ObserveSource::GitHubRepository { focus } => (
-            Mark::GitHubRepository {
+            Observe::GitHubRepository {
                 focus: focus.iter().map(RepoFocusArg::to_domain).collect(),
             },
             true,
@@ -601,7 +406,7 @@ fn cmd_observe(
         None
     };
 
-    let observation = bearing::observe(&mark, gh_config.as_deref());
+    let observation = bearing::observe(&target, gh_config.as_deref());
 
     let json = serde_json::to_string_pretty(&observation)
         .map_err(|e| format!("failed to serialize observation: {e}"))?;
@@ -610,7 +415,8 @@ fn cmd_observe(
         Some(path) => {
             fs::write(&path, &json)
                 .map_err(|e| format!("failed to write {}: {e}", path.display()))?;
-            eprintln!("Observation written to {}", path.display());
+            let summary = describe_observe_source(source);
+            eprintln!("Observed {summary} → {}", path.display());
         }
         None => {
             println!("{json}");
@@ -620,87 +426,28 @@ fn cmd_observe(
     Ok(())
 }
 
-fn cmd_bearing(
-    storage: &Storage,
-    voyage: &Voyage,
-    reading: &str,
-    observation_paths: &[PathBuf],
-) -> Result<(), String> {
-    // Load observations from files or stdin.
-    let observations = if observation_paths.is_empty() {
-        // Read a single observation from stdin.
-        let mut buf = String::new();
-        io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(|e| format!("failed to read stdin: {e}"))?;
-        let obs: Observation =
-            serde_json::from_str(&buf).map_err(|e| format!("invalid observation JSON: {e}"))?;
-        vec![obs]
-    } else {
-        // Read each observation file.
-        observation_paths
-            .iter()
-            .map(|path| {
-                let json = fs::read_to_string(path)
-                    .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-                serde_json::from_str(&json)
-                    .map_err(|e| format!("invalid observation JSON in {}: {e}", path.display()))
-            })
-            .collect::<Result<Vec<Observation>, String>>()?
-    };
-
-    // Store each observation as a separate artifact, collecting refs.
-    let mut observation_refs = Vec::with_capacity(observations.len());
-    for obs in &observations {
-        let id = storage
-            .store_observation(voyage.id, obs)
-            .map_err(|e| format!("failed to store observation: {e}"))?;
-        observation_refs.push(id);
-    }
-
-    // Seal the bearing with marks + refs (no inlined sightings).
-    let sealed = bearing::record_bearing(&observations, observation_refs, reading.to_string())
-        .map_err(|e| format!("failed to take bearing: {e}"))?;
-
-    // Write bearing to logbook.
-    storage
-        .append_entry(voyage.id, &LogbookEntry::Bearing(sealed.clone()))
-        .map_err(|e| format!("failed to save bearing: {e}"))?;
-
-    eprintln!("Bearing taken for voyage {}", &voyage.id.to_string()[..8]);
-    eprintln!("Reading: {reading}");
-
-    Ok(())
-}
-
-fn cmd_action(
-    storage: &Storage,
-    voyage: &Voyage,
-    action_cmd: &ActionCommand,
-) -> Result<(), String> {
-    if matches!(voyage.status, VoyageStatus::Completed { .. }) {
+fn cmd_end(storage: &Storage, voyage: &Voyage, status: Option<&str>) -> Result<(), String> {
+    if matches!(voyage.status, VoyageStatus::Ended { .. }) {
         return Err(format!(
-            "voyage {} is already completed",
+            "voyage {} is already ended",
             &voyage.id.to_string()[..8]
         ));
     }
 
-    let gh_config = gh_config_dir(&voyage.identity)?;
-    let act = perform(action_cmd, &gh_config)?;
-
-    let action = Action {
-        id: Uuid::new_v4(),
-        kind: act,
-        performed_at: Timestamp::now(),
+    let mut voyage = voyage.clone();
+    voyage.status = VoyageStatus::Ended {
+        ended_at: Timestamp::now(),
+        status: status.map(String::from),
     };
-
     storage
-        .append_entry(voyage.id, &LogbookEntry::Action(action.clone()))
-        .map_err(|e| format!("failed to save action: {e}"))?;
+        .update_voyage(&voyage)
+        .map_err(|e| format!("failed to update voyage: {e}"))?;
 
     let short_id = &voyage.id.to_string()[..8];
-    eprintln!("Action performed for voyage {short_id}");
-    eprintln!("  {}", format_action(&action.kind));
+    eprintln!("Voyage {short_id} ended");
+    if let Some(s) = status {
+        eprintln!("Status: {s}");
+    }
 
     Ok(())
 }
@@ -724,115 +471,38 @@ fn gh_config_dir(identity: &str) -> Result<PathBuf, String> {
     Ok(config_dir)
 }
 
-fn cmd_log(storage: &Storage, voyage: &Voyage) -> Result<(), String> {
-    println!("Voyage: {}", voyage.intent);
-    println!("Identity: {}", voyage.identity);
-    println!("Created: {}", voyage.created_at);
-    match &voyage.status {
-        VoyageStatus::Active => println!("Status: active"),
-        VoyageStatus::Completed {
-            completed_at,
-            summary,
-        } => {
-            println!("Status: completed ({completed_at})");
-            if let Some(s) = summary {
-                println!("Summary: {s}");
-            }
+/// Short human-readable description of what was observed.
+fn describe_observe_source(source: &ObserveSource) -> String {
+    match source {
+        ObserveSource::FileContents { read } => format!("{} file(s)", read.len()),
+        ObserveSource::DirectoryTree { root, .. } => {
+            format!("directory tree at {}", root.display())
+        }
+        ObserveSource::RustProject { path } => format!("Rust project at {}", path.display()),
+        ObserveSource::GitHubPullRequest { number, focus } => {
+            let focuses =
+                format_pr_focuses(&focus.iter().map(PrFocusArg::to_domain).collect::<Vec<_>>());
+            format!("PR #{number} [{focuses}]")
+        }
+        ObserveSource::GitHubIssue { number, focus } => {
+            let focuses = format_issue_focuses(
+                &focus
+                    .iter()
+                    .map(IssueFocusArg::to_domain)
+                    .collect::<Vec<_>>(),
+            );
+            format!("issue #{number} [{focuses}]")
+        }
+        ObserveSource::GitHubRepository { focus } => {
+            let focuses = format_repo_focuses(
+                &focus
+                    .iter()
+                    .map(RepoFocusArg::to_domain)
+                    .collect::<Vec<_>>(),
+            );
+            format!("repository [{focuses}]")
         }
     }
-    println!();
-
-    let entries = storage
-        .load_logbook(voyage.id)
-        .map_err(|e| format!("failed to load logbook: {e}"))?;
-
-    if entries.is_empty() {
-        println!("Logbook is empty");
-        return Ok(());
-    }
-
-    for (i, entry) in entries.iter().enumerate() {
-        match entry {
-            LogbookEntry::Bearing(b) => {
-                println!("── Bearing {} ── {}", i + 1, b.taken_at);
-                for mark in &b.marks {
-                    match mark {
-                        Mark::FileContents { paths } => {
-                            println!("  Mark: FileContents");
-                            for p in paths {
-                                let path: &PathBuf = p;
-                                println!("    read: {}", path.display());
-                            }
-                        }
-                        Mark::DirectoryTree {
-                            root,
-                            skip,
-                            max_depth,
-                        } => {
-                            print!("  Mark: DirectoryTree @ {}", root.display());
-                            if !skip.is_empty() {
-                                print!(" (skip: {})", skip.join(", "));
-                            }
-                            if let Some(depth) = max_depth {
-                                print!(" (depth: {depth})");
-                            }
-                            println!();
-                        }
-                        Mark::RustProject { root } => {
-                            println!("  Mark: RustProject @ {}", root.display());
-                        }
-                        Mark::GitHubPullRequest { number, focus } => {
-                            let focuses = format_pr_focuses(focus);
-                            println!("  Mark: GitHub PR #{number} [{focuses}]");
-                        }
-                        Mark::GitHubIssue { number, focus } => {
-                            let focuses = format_issue_focuses(focus);
-                            println!("  Mark: GitHub Issue #{number} [{focuses}]");
-                        }
-                        Mark::GitHubRepository { focus } => {
-                            let focuses = format_repo_focuses(focus);
-                            println!("  Mark: GitHub Repository [{focuses}]");
-                        }
-                    }
-                }
-                println!("  Reading: {}", b.reading.text);
-                println!();
-            }
-            LogbookEntry::Action(a) => {
-                println!("── Action {} ── {}", i + 1, a.performed_at);
-                println!("  {}", format_action(&a.kind));
-                println!();
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn cmd_complete(storage: &Storage, voyage: &Voyage, summary: Option<&str>) -> Result<(), String> {
-    if matches!(voyage.status, VoyageStatus::Completed { .. }) {
-        return Err(format!(
-            "voyage {} is already completed",
-            &voyage.id.to_string()[..8]
-        ));
-    }
-
-    let mut voyage = voyage.clone();
-    voyage.status = VoyageStatus::Completed {
-        completed_at: Timestamp::now(),
-        summary: summary.map(String::from),
-    };
-    storage
-        .update_voyage(&voyage)
-        .map_err(|e| format!("failed to update voyage: {e}"))?;
-
-    let short_id = &voyage.id.to_string()[..8];
-    eprintln!("Voyage {short_id} completed");
-    if let Some(s) = summary {
-        eprintln!("Summary: {s}");
-    }
-
-    Ok(())
 }
 
 /// Resolve a voyage reference (full UUID or unambiguous prefix) to a voyage.

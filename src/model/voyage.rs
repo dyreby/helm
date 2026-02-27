@@ -10,28 +10,15 @@ use uuid::Uuid;
 pub struct Voyage {
     pub id: Uuid,
 
-    /// The identity sailing this voyage (e.g. "john-agent", "dyreby").
+    /// The identity sailing this voyage (e.g. `"john-agent"`, `"dyreby"`).
+    ///
     /// Set at creation — from `--as` or the configured default identity.
-    /// Inherited by all commands on this voyage.
+    /// Inherited by commands on this voyage that need GitHub auth.
     pub identity: String,
 
-    pub kind: VoyageKind,
     pub intent: String,
     pub created_at: Timestamp,
     pub status: VoyageStatus,
-}
-
-/// The kind of voyage, which frames the first bearing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum VoyageKind {
-    /// Unscoped, general-purpose voyage.
-    /// No prescribed framing.
-    OpenWaters,
-
-    /// Resolve a GitHub issue.
-    /// Frames the voyage around understanding and closing a specific issue.
-    ResolveIssue,
 }
 
 /// Where a voyage stands in its lifecycle.
@@ -42,11 +29,11 @@ pub enum VoyageStatus {
     Active,
 
     /// The voyage is complete — returned to port, logbook sealed.
-    Completed {
-        /// When the voyage was completed.
-        completed_at: Timestamp,
+    Ended {
+        /// When the voyage ended.
+        ended_at: Timestamp,
 
-        /// What was accomplished or learned.
-        summary: Option<String>,
+        /// Freeform status: what was accomplished, learned, or left open.
+        status: Option<String>,
     },
 }

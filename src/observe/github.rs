@@ -1,4 +1,4 @@
-//! GitHub source kind: PRs, issues, and repository listings.
+//! GitHub observation: PRs, issues, and repository listings.
 //!
 //! Fetches data via the `gh` CLI, authenticated using the voyage's identity.
 //! Each focus item maps to one or more `gh` commands.
@@ -10,8 +10,8 @@ use serde::Deserialize;
 
 use crate::model::{
     CheckRun, GitHubComment, GitHubIssueSummary, GitHubPullRequestSummary, GitHubSummary,
-    IssueFocus, IssueSighting, PullRequestFocus, PullRequestSighting, RepositoryFocus,
-    RepositorySighting, ReviewComment, Sighting,
+    IssueFocus, IssuePayload, Payload, PullRequestFocus, PullRequestPayload, RepositoryFocus,
+    RepositoryPayload, ReviewComment,
 };
 
 /// Observe a pull request with the requested focus items.
@@ -21,7 +21,7 @@ pub fn observe_github_pull_request(
     number: u64,
     focus: &[PullRequestFocus],
     gh_config: &Path,
-) -> Sighting {
+) -> Payload {
     let focus = if focus.is_empty() {
         &[PullRequestFocus::Summary]
     } else {
@@ -58,7 +58,7 @@ pub fn observe_github_pull_request(
         }
     }
 
-    Sighting::GitHubPullRequest(Box::new(PullRequestSighting {
+    Payload::GitHubPullRequest(Box::new(PullRequestPayload {
         summary,
         files,
         checks,
@@ -71,7 +71,7 @@ pub fn observe_github_pull_request(
 /// Observe an issue with the requested focus items.
 ///
 /// Defaults to summary when no focus is specified.
-pub fn observe_github_issue(number: u64, focus: &[IssueFocus], gh_config: &Path) -> Sighting {
+pub fn observe_github_issue(number: u64, focus: &[IssueFocus], gh_config: &Path) -> Payload {
     let focus = if focus.is_empty() {
         &[IssueFocus::Summary]
     } else {
@@ -92,13 +92,13 @@ pub fn observe_github_issue(number: u64, focus: &[IssueFocus], gh_config: &Path)
         }
     }
 
-    Sighting::GitHubIssue(Box::new(IssueSighting { summary, comments }))
+    Payload::GitHubIssue(Box::new(IssuePayload { summary, comments }))
 }
 
 /// Observe a repository with the requested focus items.
 ///
 /// Defaults to both issues and pull requests when no focus is specified.
-pub fn observe_github_repository(focus: &[RepositoryFocus], gh_config: &Path) -> Sighting {
+pub fn observe_github_repository(focus: &[RepositoryFocus], gh_config: &Path) -> Payload {
     let focus = if focus.is_empty() {
         &[RepositoryFocus::Issues, RepositoryFocus::PullRequests]
     } else {
@@ -119,7 +119,7 @@ pub fn observe_github_repository(focus: &[RepositoryFocus], gh_config: &Path) ->
         }
     }
 
-    Sighting::GitHubRepository(Box::new(RepositorySighting {
+    Payload::GitHubRepository(Box::new(RepositoryPayload {
         issues,
         pull_requests,
     }))

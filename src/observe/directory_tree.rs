@@ -1,4 +1,4 @@
-//! `DirectoryTree` source kind: recursive directory walk with filtering.
+//! `DirectoryTree` observation: recursive directory walk with filtering.
 //!
 //! Walks a directory tree, respects `.gitignore`, and supports
 //! skip patterns (directory names to skip at any depth) and
@@ -12,7 +12,7 @@ use std::{
 
 use ignore::WalkBuilder;
 
-use crate::model::{DirectoryEntry, DirectoryListing, Sighting};
+use crate::model::{DirectoryEntry, DirectoryListing, Payload};
 
 /// Walk a directory tree recursively with filtering.
 ///
@@ -22,9 +22,9 @@ use crate::model::{DirectoryEntry, DirectoryListing, Sighting};
 ///
 /// Produces one `DirectoryListing` per directory in the tree.
 /// Entries are sorted by name within each listing.
-pub fn observe_directory_tree(root: &Path, skip: &[String], max_depth: Option<u32>) -> Sighting {
+pub fn observe_directory_tree(root: &Path, skip: &[String], max_depth: Option<u32>) -> Payload {
     let listings = walk_tree(root, skip, max_depth);
-    Sighting::DirectoryTree { listings }
+    Payload::DirectoryTree { listings }
 }
 
 /// Walk the tree and collect listings.
@@ -120,9 +120,9 @@ mod tests {
     fn walks_full_tree() {
         let dir = setup_tree();
 
-        let Sighting::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], None)
+        let Payload::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], None)
         else {
-            panic!("expected DirectoryTree sighting");
+            panic!("expected DirectoryTree payload");
         };
 
         // Should have listings for root, src, src/util, target, node_modules.
@@ -142,12 +142,12 @@ mod tests {
     fn skip_directories() {
         let dir = setup_tree();
 
-        let Sighting::DirectoryTree { listings } = observe_directory_tree(
+        let Payload::DirectoryTree { listings } = observe_directory_tree(
             dir.path(),
             &["target".to_string(), "node_modules".to_string()],
             None,
         ) else {
-            panic!("expected DirectoryTree sighting");
+            panic!("expected DirectoryTree payload");
         };
 
         // target/ and node_modules/ should not appear.
@@ -172,9 +172,9 @@ mod tests {
         let dir = setup_tree();
 
         // Depth 1 = root entries only.
-        let Sighting::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], Some(1))
+        let Payload::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], Some(1))
         else {
-            panic!("expected DirectoryTree sighting");
+            panic!("expected DirectoryTree payload");
         };
 
         // Only the root directory should have a listing.
@@ -182,9 +182,9 @@ mod tests {
         assert_eq!(listings[0].path, dir.path());
 
         // Depth 2 = root + immediate subdirectories.
-        let Sighting::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], Some(2))
+        let Payload::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], Some(2))
         else {
-            panic!("expected DirectoryTree sighting");
+            panic!("expected DirectoryTree payload");
         };
 
         // Should have root and its subdirectories, but not src/util/.
@@ -201,10 +201,10 @@ mod tests {
     fn nested_structure_preserved() {
         let dir = setup_tree();
 
-        let Sighting::DirectoryTree { listings } =
+        let Payload::DirectoryTree { listings } =
             observe_directory_tree(dir.path(), &["target".to_string()], None)
         else {
-            panic!("expected DirectoryTree sighting");
+            panic!("expected DirectoryTree payload");
         };
 
         let src_listing = listings
@@ -231,9 +231,9 @@ mod tests {
     fn empty_directory_produces_root_only() {
         let dir = TempDir::new().unwrap();
 
-        let Sighting::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], None)
+        let Payload::DirectoryTree { listings } = observe_directory_tree(dir.path(), &[], None)
         else {
-            panic!("expected DirectoryTree sighting");
+            panic!("expected DirectoryTree payload");
         };
 
         // Empty directory: no entries means no listings
@@ -246,10 +246,10 @@ mod tests {
         let dir = setup_tree();
 
         // Skip node_modules, limit to depth 2 (root + immediate children).
-        let Sighting::DirectoryTree { listings } =
+        let Payload::DirectoryTree { listings } =
             observe_directory_tree(dir.path(), &["node_modules".to_string()], Some(2))
         else {
-            panic!("expected DirectoryTree sighting");
+            panic!("expected DirectoryTree payload");
         };
 
         // node_modules should not appear.
@@ -273,15 +273,15 @@ mod tests {
     // ── Dispatch test ──
 
     #[test]
-    fn observe_dispatches_directory_tree_mark() {
+    fn observe_dispatches_directory_tree_target() {
         let dir = setup_tree();
-        let mark = crate::model::Mark::DirectoryTree {
+        let target = crate::model::Observe::DirectoryTree {
             root: dir.path().to_path_buf(),
             skip: vec!["target".to_string()],
             max_depth: None,
         };
 
-        let sighting = crate::observe::observe(&mark, None);
-        assert!(matches!(sighting, Sighting::DirectoryTree { .. }));
+        let payload = crate::observe::observe(&target, None);
+        assert!(matches!(payload, Payload::DirectoryTree { .. }));
     }
 }

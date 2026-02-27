@@ -1,4 +1,7 @@
 //! Observation storage: store observations with sequential ID assignment.
+//!
+//! Working-set storage (working.jsonl) is implemented in #98.
+//! This module stores individual observation snapshots for reference.
 
 use std::fs;
 
@@ -8,6 +11,8 @@ use crate::model::Observation;
 
 use super::{Result, Storage, StorageError};
 
+// TODO: remove once observe (#99) is wired to the working set.
+#[allow(dead_code)]
 impl Storage {
     /// Stores an observation as a numbered JSON file in the voyage's
     /// `observations/` directory. Returns the assigned ID.
@@ -73,7 +78,6 @@ mod tests {
         Voyage {
             id: Uuid::new_v4(),
             identity: "john-agent".into(),
-            kind: VoyageKind::OpenWaters,
             intent: "Fix the widget".into(),
             created_at: Timestamp::now(),
             status: VoyageStatus::Active,
@@ -82,12 +86,12 @@ mod tests {
 
     fn sample_observation() -> Observation {
         Observation {
-            mark: Mark::DirectoryTree {
+            target: Observe::DirectoryTree {
                 root: PathBuf::from("src/"),
                 skip: vec![],
                 max_depth: None,
             },
-            sighting: Sighting::DirectoryTree {
+            payload: Payload::DirectoryTree {
                 listings: vec![DirectoryListing {
                     path: PathBuf::from("src/"),
                     entries: vec![DirectoryEntry {
@@ -135,7 +139,7 @@ mod tests {
         // Verify it round-trips.
         let json = fs::read_to_string(obs_path).unwrap();
         let loaded: Observation = serde_json::from_str(&json).unwrap();
-        assert!(matches!(loaded.mark, Mark::DirectoryTree { .. }));
+        assert!(matches!(loaded.target, Observe::DirectoryTree { .. }));
     }
 
     #[test]
