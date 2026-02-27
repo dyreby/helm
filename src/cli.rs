@@ -215,7 +215,7 @@ fn cmd_steer(
     //    Happens after seal so a failed perform leaves the logbook untouched.
     //    If perform succeeds but append fails, the steer is unlogged — acceptable
     //    gap for now; true atomicity would require a WAL or similar.
-    steer::execute(&steer_action, &gh_config)?;
+    steer::perform(&steer_action, &gh_config)?;
 
     // 4. Record one logbook entry.
     let entry = LogbookEntry {
