@@ -16,10 +16,10 @@ use crate::model::Observation;
 
 use super::{Result, Storage, StorageError};
 
-// TODO: remove once observe (#99) is wired to the working set.
-#[allow(dead_code)]
 impl Storage {
     /// Appends an observation to the voyage's working set.
+    // TODO: remove once observe (#99) is wired to the working set.
+    #[allow(dead_code)]
     pub fn append_working(&self, voyage_id: Uuid, observation: &Observation) -> Result<()> {
         let dir = self.voyage_dir(voyage_id);
         if !dir.exists() {
@@ -95,7 +95,6 @@ mod tests {
     fn sample_voyage() -> Voyage {
         Voyage {
             id: Uuid::new_v4(),
-            identity: "john-agent".into(),
             intent: "Fix the widget".into(),
             created_at: Timestamp::now(),
             status: VoyageStatus::Active,

@@ -1,26 +1,17 @@
 mod bearing;
 mod cli;
-mod config;
 mod model;
 // TODO: remove once observe is wired to the working set in #99.
 #[allow(dead_code)]
 mod observe;
+mod steer;
 mod storage;
 
 use std::process;
 
-use config::Config;
 use storage::Storage;
 
 fn main() {
-    let config = match Config::load() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            process::exit(1);
-        }
-    };
-
     let root = Storage::default_root().unwrap_or_else(|| {
         eprintln!("Could not determine home directory");
         process::exit(1);
@@ -34,7 +25,7 @@ fn main() {
         }
     };
 
-    if let Err(e) = cli::run(&config, &storage) {
+    if let Err(e) = cli::run(&storage) {
         eprintln!("Error: {e}");
         process::exit(1);
     }

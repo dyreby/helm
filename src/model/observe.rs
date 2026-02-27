@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Each variant describes something helm can look at.
 /// Adding a new observation type means adding a variant here
 /// and implementing its observation logic.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Observe {
     /// Read specific files.
@@ -50,7 +50,7 @@ pub enum Observe {
 }
 
 /// How much of a pull request to observe.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PullRequestFocus {
     /// PR metadata and comments.

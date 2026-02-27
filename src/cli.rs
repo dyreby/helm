@@ -14,14 +14,17 @@ mod format;
 
 use std::{fs, path::PathBuf};
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{
     bearing,
-    config::Config,
-    model::{Observe, PullRequestFocus, Voyage, VoyageStatus},
+    model::{
+        CommentTarget, EntryKind, LogbookEntry, Observe, PullRequestFocus, Steer, Voyage,
+        VoyageStatus,
+    },
+    steer,
     storage::Storage,
 };
 
@@ -31,26 +34,21 @@ use format::format_pr_focus;
 #[derive(Debug, Parser)]
 #[command(name = "helm", after_long_help = WORKFLOW_HELP)]
 pub struct Cli {
-    /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
-    /// Required for observe, steer, and log.
-    #[arg(long, global = true)]
-    voyage: Option<String>,
-
     #[command(subcommand)]
     pub command: Command,
 }
 
 const WORKFLOW_HELP: &str = r#"Workflow: advancing an issue
-  1. helm voyage new --as john-agent "Resolve #42: fix widget crash"
+  1. helm voyage new "Resolve #42: fix widget crash"
      → prints a voyage ID (e.g. a3b0fc12)
-  2. helm --voyage a3b observe github-issue 42
-  3. helm --voyage a3b steer comment 42 "Here's my plan: ..."
-  4. helm --voyage a3b voyage end --status "Merged PR #45"
+  2. helm observe --voyage a3b --as john-agent github-issue 42
+  3. helm steer --voyage a3b --as john-agent --summary "Plan looks good" comment --issue 42 --body "Here's my plan: ..."
+  4. helm voyage end --voyage a3b --status "Merged PR #45"
 
 Observe:
-  helm --voyage a3b observe file-contents --read src/widget.rs
-  helm --voyage a3b observe github-pr 42 --focus full
-  helm --voyage a3b observe github-repo"#;
+  helm observe --voyage a3b --as john-agent file-contents --read src/widget.rs
+  helm observe --voyage a3b --as john-agent github-pr 42 --focus full
+  helm observe --voyage a3b --as john-agent github-repo"#;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -65,8 +63,17 @@ pub enum Command {
     /// Pure read, no side effects, repeatable.
     /// The observation JSON is written to `--out` (if given) or stdout.
     /// A human-readable summary is printed to stderr when writing to a file.
-    /// Requires `--voyage`.
+    /// GitHub observations require `--as`.
     Observe {
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
+        #[arg(long)]
+        voyage: String,
+
+        /// Identity to use for GitHub auth (e.g. `john-agent`).
+        /// Required for GitHub observations; ignored for local observations.
+        #[arg(long = "as")]
+        identity: Option<String>,
+
         #[command(subcommand)]
         source: ObserveSource,
 
@@ -79,10 +86,19 @@ pub enum Command {
     ///
     /// Seals a bearing from the working set, executes the action,
     /// records one logbook entry, and clears the working set.
-    /// Requires `--voyage`.
-    ///
-    /// Not yet implemented — coming in a future mission.
     Steer {
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
+        #[arg(long)]
+        voyage: String,
+
+        /// Who is steering (e.g. `john-agent`).
+        #[arg(long = "as")]
+        identity: String,
+
+        /// Why you're steering — orientation for the logbook entry.
+        #[arg(long)]
+        summary: String,
+
         #[command(subcommand)]
         action: SteerAction,
     },
@@ -91,23 +107,46 @@ pub enum Command {
     ///
     /// Same seal-and-clear behavior as steer. Use when the voyage reaches
     /// a state worth recording but there's nothing to change in the world.
-    /// Requires `--voyage`.
     ///
-    /// Not yet implemented — coming in a future mission.
+    /// Not yet implemented — coming in #101.
     Log {
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
+        #[arg(long)]
+        voyage: String,
+
+        /// Who is logging (e.g. `john-agent`).
+        #[arg(long = "as")]
+        identity: String,
+
+        /// Why you're logging — orientation for the logbook entry.
+        #[arg(long)]
+        summary: String,
+
         /// Freeform status to record.
         status: String,
     },
 }
 
-/// Steer subcommands (stub — fields defined when each is built).
+/// Steer subcommands.
 #[derive(Debug, Subcommand)]
 pub enum SteerAction {
-    /// Comment on an issue or PR.
+    /// Comment on an issue, PR, or inline review thread.
+    #[command(group(ArgGroup::new("target").required(true).args(["issue", "pr"])))]
     Comment {
-        /// Issue or PR number.
-        number: u64,
+        /// Comment on this issue number.
+        #[arg(long, conflicts_with = "pr")]
+        issue: Option<u64>,
+
+        /// Comment on this PR number.
+        #[arg(long, conflicts_with = "issue")]
+        pr: Option<u64>,
+
+        /// Reply to this inline review comment ID (requires `--pr`).
+        #[arg(long, requires = "pr")]
+        reply_to: Option<u64>,
+
         /// Comment body.
+        #[arg(long)]
         body: String,
     },
 }
@@ -116,12 +155,6 @@ pub enum SteerAction {
 pub enum VoyageCommand {
     /// Create a new voyage. Prints the voyage ID.
     New {
-        /// Identity for this voyage (e.g. "john-agent").
-        /// All commands on this voyage inherit this identity for GitHub auth.
-        /// When omitted, the configured default identity is used.
-        #[arg(long = "as")]
-        identity: Option<String>,
-
         /// What this voyage is about.
         intent: String,
     },
@@ -131,6 +164,10 @@ pub enum VoyageCommand {
 
     /// End a voyage.
     End {
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
+        #[arg(long)]
+        voyage: String,
+
         /// Freeform status: what was accomplished, learned, or left open.
         #[arg(long)]
         status: Option<String>,
@@ -218,46 +255,43 @@ impl PrFocusArg {
 }
 
 /// Run the CLI, returning an error message on failure.
-pub fn run(config: &Config, storage: &Storage) -> Result<(), String> {
+pub fn run(storage: &Storage) -> Result<(), String> {
     let cli = Cli::parse();
 
     match cli.command {
         Command::Voyage { command } => match command {
-            VoyageCommand::New { identity, intent } => {
-                cmd_new(config, storage, identity.as_deref(), &intent)
-            }
+            VoyageCommand::New { intent } => cmd_new(storage, &intent),
             VoyageCommand::List => cmd_list(storage),
-            VoyageCommand::End { status } => {
-                let voyage = require_voyage(storage, cli.voyage.as_deref())?;
+            VoyageCommand::End { voyage, status } => {
+                let voyage = resolve_voyage(storage, &voyage)?;
                 cmd_end(storage, &voyage, status.as_deref())
             }
         },
-        Command::Observe { ref source, out } => {
-            let voyage = require_voyage(storage, cli.voyage.as_deref())?;
-            cmd_observe(&voyage, source, out)
+        Command::Observe {
+            voyage,
+            identity,
+            ref source,
+            out,
+        } => {
+            let voyage = resolve_voyage(storage, &voyage)?;
+            cmd_observe(&voyage, identity.as_deref(), source, out)
         }
-        Command::Steer { .. } => Err("steer not yet implemented".to_string()),
+        Command::Steer {
+            voyage,
+            identity,
+            summary,
+            action,
+        } => {
+            let voyage = resolve_voyage(storage, &voyage)?;
+            cmd_steer(storage, &voyage, &identity, &summary, &action)
+        }
         Command::Log { .. } => Err("log not yet implemented".to_string()),
     }
 }
 
-/// Require that `--voyage` was provided and resolve it.
-fn require_voyage(storage: &Storage, voyage_ref: Option<&str>) -> Result<Voyage, String> {
-    let voyage_ref = voyage_ref.ok_or("this command requires --voyage <id>")?;
-    resolve_voyage(storage, voyage_ref)
-}
-
-fn cmd_new(
-    config: &Config,
-    storage: &Storage,
-    identity: Option<&str>,
-    intent: &str,
-) -> Result<(), String> {
-    let identity = identity.unwrap_or(&config.default_identity);
-
+fn cmd_new(storage: &Storage, intent: &str) -> Result<(), String> {
     let voyage = Voyage {
         id: Uuid::new_v4(),
-        identity: identity.to_string(),
         intent: intent.to_string(),
         created_at: Timestamp::now(),
         status: VoyageStatus::Active,
@@ -287,7 +321,7 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
             VoyageStatus::Ended { .. } => "ended",
         };
         let short_id = &v.id.to_string()[..8];
-        println!("{short_id}  [{status}] [{}]  {}", v.identity, v.intent);
+        println!("{short_id}  [{status}]  {}", v.intent);
     }
 
     Ok(())
@@ -295,6 +329,7 @@ fn cmd_list(storage: &Storage) -> Result<(), String> {
 
 fn cmd_observe(
     voyage: &Voyage,
+    identity: Option<&str>,
     source: &ObserveSource,
     out: Option<PathBuf>,
 ) -> Result<(), String> {
@@ -335,7 +370,8 @@ fn cmd_observe(
     };
 
     let gh_config = if needs_gh {
-        Some(gh_config_dir(&voyage.identity)?)
+        let id = identity.ok_or("GitHub observations require --as <identity>".to_string())?;
+        Some(gh_config_dir(id)?)
     } else {
         None
     };
@@ -357,6 +393,53 @@ fn cmd_observe(
         }
     }
 
+    // TODO(#99): append observation to voyage's working set here.
+    let _ = voyage;
+
+    Ok(())
+}
+
+fn cmd_steer(
+    storage: &Storage,
+    voyage: &Voyage,
+    identity: &str,
+    summary: &str,
+    action: &SteerAction,
+) -> Result<(), String> {
+    let gh_config = gh_config_dir(identity)?;
+
+    // 1. Build the typed steer action from CLI args.
+    let steer_action = build_steer_action(action);
+
+    // 2. Curate a bearing from the working set — seal what we knew going in.
+    let observations = storage
+        .load_working(voyage.id)
+        .map_err(|e| format!("failed to load working set: {e}"))?;
+    let bearing = bearing::seal(observations, summary.to_string());
+
+    // 3. Execute the action — mutate collaborative state.
+    //    Happens after seal so a failed execute leaves the logbook untouched.
+    //    If execute succeeds but append fails, the steer is unlogged — acceptable
+    //    gap for now; true atomicity would require a WAL or similar.
+    steer::execute(&steer_action, &gh_config)?;
+
+    // 4. Record one logbook entry.
+    let entry = LogbookEntry {
+        bearing,
+        author: identity.to_string(),
+        timestamp: Timestamp::now(),
+        kind: EntryKind::Steer(steer_action),
+    };
+    storage
+        .append_entry(voyage.id, &entry)
+        .map_err(|e| format!("failed to append logbook entry: {e}"))?;
+
+    // 5. Clear the working set.
+    storage
+        .clear_working(voyage.id)
+        .map_err(|e| format!("failed to clear working set: {e}"))?;
+
+    eprintln!("Steered: {}", describe_steer_action(action));
     Ok(())
 }
 
@@ -384,6 +467,33 @@ fn cmd_end(storage: &Storage, voyage: &Voyage, status: Option<&str>) -> Result<(
     }
 
     Ok(())
+}
+
+/// Convert CLI steer args to the typed `Steer` model.
+fn build_steer_action(action: &SteerAction) -> Steer {
+    match action {
+        SteerAction::Comment {
+            issue,
+            pr,
+            reply_to,
+            body,
+        } => {
+            // Clap's ArgGroup ensures exactly one of --issue or --pr is present.
+            let (number, target) = match (issue, pr, reply_to) {
+                (Some(n), None, None) => (*n, CommentTarget::Issue),
+                (None, Some(n), None) => (*n, CommentTarget::PullRequest),
+                (None, Some(n), Some(id)) => {
+                    (*n, CommentTarget::ReviewFeedback { comment_id: *id })
+                }
+                _ => unreachable!("clap ArgGroup guarantees --issue or --pr is present"),
+            };
+            Steer::Comment {
+                number,
+                body: body.clone(),
+                target,
+            }
+        }
+    }
 }
 
 /// Resolve the `GH_CONFIG_DIR` for a given identity.
@@ -418,6 +528,23 @@ fn describe_observe_source(source: &ObserveSource) -> String {
         }
         ObserveSource::GitHubIssue { number } => format!("issue #{number}"),
         ObserveSource::GitHubRepository => "repository".to_string(),
+    }
+}
+
+/// Short human-readable description of what was steered.
+fn describe_steer_action(action: &SteerAction) -> String {
+    match action {
+        SteerAction::Comment {
+            issue,
+            pr,
+            reply_to,
+            body: _,
+        } => match (issue, pr, reply_to) {
+            (Some(n), None, None) => format!("comment on issue #{n}"),
+            (None, Some(n), None) => format!("comment on PR #{n}"),
+            (None, Some(n), Some(id)) => format!("reply to review comment {id} on PR #{n}"),
+            _ => "comment".to_string(),
+        },
     }
 }
 

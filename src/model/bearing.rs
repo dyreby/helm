@@ -9,8 +9,6 @@ use super::observation::Observation;
 /// Curated from the working set when steer or log is called.
 /// One bearing per log entry — many observations feed into
 /// one understanding of where you are.
-// TODO: remove once steer (#100) and log (#101) are wired to the CLI.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bearing {
