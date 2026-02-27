@@ -2,64 +2,159 @@
 
 use std::{fs, io};
 
+use rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::model::Voyage;
+use crate::model::{Voyage, VoyageStatus};
 
 use super::{Result, Storage, StorageError};
 
 impl Storage {
-    /// Creates a new voyage, writing its metadata to disk.
+    /// Creates a new voyage, writing its metadata to a new `SQLite` file.
     pub fn create_voyage(&self, voyage: &Voyage) -> Result<()> {
-        let dir = self.voyage_dir(voyage.id);
-        if dir.exists() {
-            return Err(StorageError::VoyageAlreadyExists(voyage.id));
-        }
-        fs::create_dir_all(&dir)?;
-        let json = serde_json::to_string_pretty(voyage)?;
-        fs::write(dir.join("voyage.json"), json)?;
+        let conn = self.create_db(voyage.id)?;
+        let (status, ended_at, ended_status) = serialize_status(&voyage.status);
+        conn.execute(
+            "INSERT INTO voyage (id, intent, created_at, status, ended_at, ended_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                voyage.id.to_string(),
+                &voyage.intent,
+                voyage.created_at.to_string(),
+                status,
+                ended_at,
+                ended_status,
+            ],
+        )?;
         Ok(())
     }
 
-    /// Updates a voyage's metadata on disk.
+    /// Updates a voyage's metadata.
     pub fn update_voyage(&self, voyage: &Voyage) -> Result<()> {
-        let path = self.voyage_dir(voyage.id).join("voyage.json");
-        if !path.exists() {
+        let conn = self.open_db(voyage.id)?;
+        let (status, ended_at, ended_status) = serialize_status(&voyage.status);
+        let rows = conn.execute(
+            "UPDATE voyage
+             SET intent = ?1, created_at = ?2, status = ?3, ended_at = ?4, ended_status = ?5
+             WHERE id = ?6",
+            rusqlite::params![
+                &voyage.intent,
+                voyage.created_at.to_string(),
+                status,
+                ended_at,
+                ended_status,
+                voyage.id.to_string(),
+            ],
+        )?;
+        if rows == 0 {
             return Err(StorageError::VoyageNotFound(voyage.id));
         }
-        let json = serde_json::to_string_pretty(voyage)?;
-        fs::write(path, json)?;
         Ok(())
     }
 
     /// Loads a single voyage's metadata.
     pub fn load_voyage(&self, id: Uuid) -> Result<Voyage> {
-        let path = self.voyage_dir(id).join("voyage.json");
-        if !path.exists() {
-            return Err(StorageError::VoyageNotFound(id));
-        }
-        let json = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&json)?)
+        let conn = self.open_db(id)?;
+        load_voyage_row(&conn)
     }
 
-    /// Lists all voyages by reading each voyage directory's metadata.
+    /// Lists all voyages by reading each `.sqlite` file in the storage root.
+    ///
+    /// Unreadable or malformed files are silently skipped.
     pub fn list_voyages(&self) -> Result<Vec<Voyage>> {
         let mut voyages = Vec::new();
         let entries = match fs::read_dir(&self.root) {
-            Ok(entries) => entries,
+            Ok(e) => e,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(voyages),
             Err(e) => return Err(e.into()),
         };
         for entry in entries {
             let entry = entry?;
-            let path = entry.path().join("voyage.json");
-            if path.is_file() {
-                let json = fs::read_to_string(&path)?;
-                voyages.push(serde_json::from_str(&json)?);
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("sqlite") {
+                continue;
+            }
+            let Ok(conn) = Connection::open(&path) else {
+                continue;
+            };
+            if let Ok(v) = load_voyage_row(&conn) {
+                voyages.push(v);
             }
         }
-        voyages.sort_by(|a: &Voyage, b: &Voyage| a.created_at.cmp(&b.created_at));
+        voyages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         Ok(voyages)
+    }
+}
+
+/// Reads the single voyage row from an open connection.
+fn load_voyage_row(conn: &Connection) -> Result<Voyage> {
+    let (id_str, intent, created_at_str, status_str, ended_at_opt, ended_status_opt) = conn
+        .query_row(
+            "SELECT id, intent, created_at, status, ended_at, ended_status FROM voyage LIMIT 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            },
+        )?;
+
+    let id = id_str
+        .parse::<Uuid>()
+        .map_err(|e| StorageError::Corrupt(format!("invalid voyage id: {e}")))?;
+    let created_at = created_at_str
+        .parse::<jiff::Timestamp>()
+        .map_err(|e| StorageError::Corrupt(format!("invalid created_at: {e}")))?;
+    let status = deserialize_status(&status_str, ended_at_opt.as_deref(), ended_status_opt)?;
+
+    Ok(Voyage {
+        id,
+        intent,
+        created_at,
+        status,
+    })
+}
+
+/// Converts a `VoyageStatus` to column values for the voyage table.
+fn serialize_status(status: &VoyageStatus) -> (String, Option<String>, Option<String>) {
+    match status {
+        VoyageStatus::Active => ("active".to_string(), None, None),
+        VoyageStatus::Ended { ended_at, status } => (
+            "ended".to_string(),
+            Some(ended_at.to_string()),
+            status.clone(),
+        ),
+    }
+}
+
+/// Reconstructs a `VoyageStatus` from voyage table column values.
+fn deserialize_status(
+    status: &str,
+    ended_at: Option<&str>,
+    ended_status: Option<String>,
+) -> Result<VoyageStatus> {
+    match status {
+        "active" => Ok(VoyageStatus::Active),
+        "ended" => {
+            let ended_at_str = ended_at.ok_or_else(|| {
+                StorageError::Corrupt("voyage is ended but ended_at is null".into())
+            })?;
+            let ended_at = ended_at_str
+                .parse::<jiff::Timestamp>()
+                .map_err(|e| StorageError::Corrupt(format!("invalid ended_at: {e}")))?;
+            Ok(VoyageStatus::Ended {
+                ended_at,
+                status: ended_status,
+            })
+        }
+        other => Err(StorageError::Corrupt(format!(
+            "unknown voyage status: {other}"
+        ))),
     }
 }
 
@@ -69,9 +164,6 @@ mod tests {
 
     use jiff::Timestamp;
     use tempfile::TempDir;
-    use uuid::Uuid;
-
-    use crate::model::*;
 
     fn test_storage() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();

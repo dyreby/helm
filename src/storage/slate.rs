@@ -1,75 +1,102 @@
 //! Slate storage: observations accumulating between steer/log commands.
 //!
-//! Observations are appended to `slate.jsonl` as they arrive.
-//! When steer or log is called, the slate is loaded, sealed into a
-//! bearing, and then cleared. The file is removed on clear — a missing file
-//! is a valid empty slate.
+//! The slate is a set: one observation per target, enforced by the database
+//! (`target` is the primary key). Observing the same target twice replaces
+//! the older entry — newest payload wins.
 
-use std::{fs, io};
-
-// Traits must be in scope for `.lines()` on `BufReader` and `.write_all()` on `File`.
-use io::{BufRead, Write};
-
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::model::Observation;
+use crate::model::{Observation, Observe, Payload};
 
 use super::{Result, Storage, StorageError};
 
 impl Storage {
-    /// Appends an observation to the voyage's slate.
+    /// Adds an observation to the voyage's slate.
+    ///
+    /// If the target is already on the slate, the previous observation is replaced
+    /// (set semantics — one observation per target, newest wins).
     pub fn append_slate(&self, voyage_id: Uuid, observation: &Observation) -> Result<()> {
-        let dir = self.voyage_dir(voyage_id);
-        if !dir.exists() {
-            return Err(StorageError::VoyageNotFound(voyage_id));
-        }
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("slate.jsonl"))?;
-        let mut line = serde_json::to_string(observation)?;
-        line.push('\n');
-        file.write_all(line.as_bytes())?;
+        let conn = self.open_db(voyage_id)?;
+
+        // Serialize and compress the payload.
+        let payload_json = serde_json::to_vec(&observation.payload)?;
+        let hash = hex::encode(Sha256::digest(&payload_json));
+        let compressed = zstd::encode_all(payload_json.as_slice(), 3)?;
+
+        // Insert the blob if it isn't already stored.
+        conn.execute(
+            "INSERT OR IGNORE INTO blobs (hash, data) VALUES (?1, ?2)",
+            rusqlite::params![hash, compressed],
+        )?;
+
+        // Upsert the slate entry. Replaces any previous observation for this target.
+        let target_json = serde_json::to_string(&observation.target)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO slate (target, blob_hash, observed_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![target_json, hash, observation.observed_at.to_string()],
+        )?;
+
         Ok(())
     }
 
     /// Loads all observations from the voyage's slate.
     ///
-    /// Returns an empty vec if the slate file doesn't exist.
+    /// Returns an empty vec if the slate is empty.
     pub fn load_slate(&self, voyage_id: Uuid) -> Result<Vec<Observation>> {
-        let path = self.voyage_dir(voyage_id).join("slate.jsonl");
-        if !path.exists() {
-            let dir = self.voyage_dir(voyage_id);
-            if !dir.exists() {
-                return Err(StorageError::VoyageNotFound(voyage_id));
-            }
-            return Ok(Vec::new());
-        }
-        let file = fs::File::open(path)?;
-        let reader = io::BufReader::new(file);
-        let mut observations = Vec::new();
-        for line in reader.lines() {
-            let line = line?;
-            if !line.is_empty() {
-                observations.push(serde_json::from_str(&line)?);
-            }
-        }
+        let conn = self.open_db(voyage_id)?;
+        let mut stmt = conn.prepare(
+            "SELECT s.target, s.observed_at, b.data
+             FROM slate s
+             JOIN blobs b ON s.blob_hash = b.hash",
+        )?;
+        let observations = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            })?
+            .map(|r| -> Result<Observation> {
+                let (target_str, observed_at_str, compressed) = r?;
+                let target: Observe = serde_json::from_str(&target_str)?;
+                let payload_json = zstd::decode_all(compressed.as_slice())?;
+                let payload: Payload = serde_json::from_slice(&payload_json)?;
+                let observed_at = observed_at_str
+                    .parse::<jiff::Timestamp>()
+                    .map_err(|e| StorageError::Corrupt(format!("invalid observed_at: {e}")))?;
+                Ok(Observation {
+                    target,
+                    payload,
+                    observed_at,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(observations)
     }
 
-    /// Clears the voyage's slate by removing `slate.jsonl`.
+    /// Clears the voyage's slate without sealing.
     ///
-    /// Idempotent: does nothing if the file doesn't exist.
+    /// Idempotent: does nothing if the slate is already empty.
     pub fn clear_slate(&self, voyage_id: Uuid) -> Result<()> {
-        let dir = self.voyage_dir(voyage_id);
-        if !dir.exists() {
-            return Err(StorageError::VoyageNotFound(voyage_id));
-        }
-        let path = dir.join("slate.jsonl");
-        if path.exists() {
-            fs::remove_file(path)?;
-        }
+        let conn = self.open_db(voyage_id)?;
+        conn.execute("DELETE FROM slate", [])?;
         Ok(())
+    }
+
+    /// Removes a single observation from the slate by target.
+    ///
+    /// Returns `true` if an entry was erased, `false` if the target was not on the slate.
+    /// Idempotent: calling again after the target is gone returns `false` without error.
+    pub fn erase_slate(&self, voyage_id: Uuid, target: &Observe) -> Result<bool> {
+        let conn = self.open_db(voyage_id)?;
+        let target_json = serde_json::to_string(target)?;
+        let rows = conn.execute(
+            "DELETE FROM slate WHERE target = ?1",
+            rusqlite::params![target_json],
+        )?;
+        Ok(rows > 0)
     }
 }
 
@@ -120,23 +147,55 @@ mod tests {
         }
     }
 
+    fn issue_observation(number: u64) -> Observation {
+        Observation {
+            target: Observe::GitHubIssue { number },
+            payload: Payload::DirectoryTree { listings: vec![] },
+            observed_at: Timestamp::now(),
+        }
+    }
+
     #[test]
     fn append_and_load_slate() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
-        let obs = sample_observation();
-        storage.append_slate(voyage.id, &obs).unwrap();
-        storage.append_slate(voyage.id, &obs).unwrap();
+        storage
+            .append_slate(voyage.id, &sample_observation())
+            .unwrap();
+        storage
+            .append_slate(voyage.id, &issue_observation(42))
+            .unwrap();
 
         let loaded = storage.load_slate(voyage.id).unwrap();
         assert_eq!(loaded.len(), 2);
-        assert!(matches!(loaded[0].target, Observe::DirectoryTree { .. }));
     }
 
     #[test]
-    fn load_slate_empty_when_no_file() {
+    fn append_slate_set_semantics_replaces_same_target() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        // Observe issue #42 twice — second should replace first.
+        storage
+            .append_slate(voyage.id, &issue_observation(42))
+            .unwrap();
+        storage
+            .append_slate(voyage.id, &issue_observation(42))
+            .unwrap();
+
+        let loaded = storage.load_slate(voyage.id).unwrap();
+        assert_eq!(loaded.len(), 1, "set semantics: only one entry per target");
+        assert!(matches!(
+            loaded[0].target,
+            Observe::GitHubIssue { number: 42 }
+        ));
+    }
+
+    #[test]
+    fn load_slate_empty() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
@@ -146,8 +205,8 @@ mod tests {
     }
 
     #[test]
-    fn clear_slate_removes_file() {
-        let (dir, storage) = test_storage();
+    fn clear_slate_removes_all_entries() {
+        let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
@@ -156,14 +215,6 @@ mod tests {
             .unwrap();
         storage.clear_slate(voyage.id).unwrap();
 
-        let slate_path = dir
-            .path()
-            .join("voyages")
-            .join(voyage.id.to_string())
-            .join("slate.jsonl");
-        assert!(!slate_path.exists());
-
-        // Load after clear returns empty.
         let loaded = storage.load_slate(voyage.id).unwrap();
         assert!(loaded.is_empty());
     }
@@ -174,8 +225,59 @@ mod tests {
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
-        // Clear with no file — should not error.
+        // Clear with empty slate — should not error.
         storage.clear_slate(voyage.id).unwrap();
+    }
+
+    #[test]
+    fn erase_slate_removes_target() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        storage
+            .append_slate(voyage.id, &sample_observation())
+            .unwrap();
+        storage
+            .append_slate(voyage.id, &issue_observation(42))
+            .unwrap();
+
+        let target = Observe::GitHubIssue { number: 42 };
+        let erased = storage.erase_slate(voyage.id, &target).unwrap();
+
+        assert!(erased);
+        let loaded = storage.load_slate(voyage.id).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(matches!(loaded[0].target, Observe::DirectoryTree { .. }));
+    }
+
+    #[test]
+    fn erase_slate_returns_false_when_target_not_present() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        let target = Observe::GitHubIssue { number: 99 };
+        let erased = storage.erase_slate(voyage.id, &target).unwrap();
+
+        assert!(!erased);
+    }
+
+    #[test]
+    fn erase_slate_idempotent() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        storage
+            .append_slate(voyage.id, &issue_observation(42))
+            .unwrap();
+
+        let target = Observe::GitHubIssue { number: 42 };
+        storage.erase_slate(voyage.id, &target).unwrap();
+        // Second erase should not error, just return false.
+        let erased = storage.erase_slate(voyage.id, &target).unwrap();
+        assert!(!erased);
     }
 
     #[test]

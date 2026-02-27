@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
+use crate::model::Observe;
+
 /// What helm can observe.
 ///
 /// Each variant is a subcommand accepted by `helm observe` and `helm slate erase`.
@@ -68,4 +70,42 @@ pub enum ObserveTarget {
     /// Always fetches open issues and pull requests.
     #[command(name = "github-repo")]
     GitHubRepository,
+}
+
+impl ObserveTarget {
+    /// Converts to the model `Observe` type.
+    pub fn to_observe(&self) -> Observe {
+        match self {
+            Self::FileContents { read } => Observe::FileContents {
+                paths: read.clone(),
+            },
+            Self::DirectoryTree {
+                root,
+                skip,
+                max_depth,
+            } => Observe::DirectoryTree {
+                root: root.clone(),
+                skip: skip.clone(),
+                max_depth: *max_depth,
+            },
+            Self::RustProject { path } => Observe::RustProject { root: path.clone() },
+            Self::GitHubPullRequest { number } => Observe::GitHubPullRequest { number: *number },
+            Self::GitHubIssue { number } => Observe::GitHubIssue { number: *number },
+            Self::GitHubRepository => Observe::GitHubRepository,
+        }
+    }
+
+    /// Returns a short human-readable description of the target.
+    pub fn description(&self) -> String {
+        match self {
+            Self::FileContents { read } => format!("{} file(s)", read.len()),
+            Self::DirectoryTree { root, .. } => {
+                format!("directory tree at {}", root.display())
+            }
+            Self::RustProject { path } => format!("Rust project at {}", path.display()),
+            Self::GitHubPullRequest { number } => format!("PR #{number}"),
+            Self::GitHubIssue { number } => format!("issue #{number}"),
+            Self::GitHubRepository => "repository".to_string(),
+        }
+    }
 }

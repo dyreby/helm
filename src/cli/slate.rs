@@ -1,8 +1,10 @@
-//! Slate management commands: list, clear.
+//! Slate management commands: list, clear, erase.
 
 use clap::Subcommand;
 
 use crate::{model::Voyage, storage::Storage};
+
+use super::target::ObserveTarget;
 
 #[derive(Debug, Subcommand)]
 pub enum SlateCommand {
@@ -14,6 +16,20 @@ pub enum SlateCommand {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
         #[arg(long)]
         voyage: String,
+    },
+
+    /// Remove a single observation from the slate by target.
+    ///
+    /// Same target syntax as `helm observe`.
+    /// Exits cleanly if the target is not on the slate.
+    Erase {
+        /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
+        #[arg(long)]
+        voyage: String,
+
+        /// What to erase — same syntax as `helm observe`.
+        #[command(subcommand)]
+        target: ObserveTarget,
     },
 
     /// Clear the slate without sealing.
@@ -36,6 +52,23 @@ pub(super) fn cmd_list(storage: &Storage, voyage: &Voyage) -> Result<(), String>
         .map_err(|e| format!("failed to serialize slate: {e}"))?;
 
     println!("{json}");
+    Ok(())
+}
+
+pub(super) fn cmd_erase(
+    storage: &Storage,
+    voyage: &Voyage,
+    target: &ObserveTarget,
+) -> Result<(), String> {
+    let observe = target.to_observe();
+    let erased = storage
+        .erase_slate(voyage.id, &observe)
+        .map_err(|e| format!("failed to erase from slate: {e}"))?;
+
+    if erased {
+        eprintln!("Erased: {}", target.description());
+    }
+
     Ok(())
 }
 

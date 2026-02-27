@@ -1,54 +1,128 @@
-//! Logbook storage: append and load logbook entries.
+//! Logbook storage: seal the slate and load logbook entries.
 
-use std::{fs, io};
-
-// Traits must be in scope for `.lines()` on BufReader and `.write_all()` on File.
-use io::{BufRead, Write};
-
+use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::model::LogbookEntry;
+use crate::model::{Bearing, EntryKind, LogbookEntry, Observation, Observe, Payload};
 
 use super::{Result, Storage, StorageError};
 
 impl Storage {
-    /// Appends a logbook entry to a voyage's logbook.
-    pub fn append_entry(&self, voyage_id: Uuid, entry: &LogbookEntry) -> Result<()> {
-        let dir = self.voyage_dir(voyage_id);
-        if !dir.exists() {
-            return Err(StorageError::VoyageNotFound(voyage_id));
-        }
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("logbook.jsonl"))?;
-        let mut line = serde_json::to_string(entry)?;
-        line.push('\n');
-        file.write_all(line.as_bytes())?;
+    /// Atomically seals the slate into a bearing, records a logbook entry, and clears the slate.
+    ///
+    /// All three steps run in a single `SQLite` transaction — inconsistent state is impossible.
+    pub fn seal_slate(
+        &self,
+        voyage_id: Uuid,
+        identity: &str,
+        timestamp: Timestamp,
+        summary: &str,
+        kind: &EntryKind,
+    ) -> Result<()> {
+        let mut conn = self.open_db(voyage_id)?;
+        let action_json = serde_json::to_string(kind)?;
+
+        let tx = conn.transaction()?;
+
+        // Insert the logbook row.
+        tx.execute(
+            "INSERT INTO logbook (recorded_at, identity, action, summary)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![timestamp.to_string(), identity, action_json, summary],
+        )?;
+        let logbook_id = tx.last_insert_rowid();
+
+        // Copy slate → bearing_observations in one statement.
+        tx.execute(
+            "INSERT INTO bearing_observations (logbook_id, target, blob_hash, observed_at)
+             SELECT ?1, target, blob_hash, observed_at FROM slate",
+            rusqlite::params![logbook_id],
+        )?;
+
+        // Clear the slate.
+        tx.execute("DELETE FROM slate", [])?;
+
+        tx.commit()?;
         Ok(())
     }
 
-    /// Loads all logbook entries for a voyage.
-    // TODO: remove once log (#101) is wired to the CLI.
+    /// Loads all logbook entries for a voyage, oldest first.
+    // TODO: remove once a read command (e.g. `helm log show`) is wired to the CLI.
     #[allow(dead_code)]
     pub fn load_logbook(&self, voyage_id: Uuid) -> Result<Vec<LogbookEntry>> {
-        let path = self.voyage_dir(voyage_id).join("logbook.jsonl");
-        if !path.exists() {
-            let dir = self.voyage_dir(voyage_id);
-            if !dir.exists() {
-                return Err(StorageError::VoyageNotFound(voyage_id));
-            }
-            return Ok(Vec::new());
-        }
-        let file = fs::File::open(path)?;
-        let reader = io::BufReader::new(file);
+        let conn = self.open_db(voyage_id)?;
+
+        // Step 1: collect all logbook rows. The stmt borrow ends before the per-row queries.
+        let rows: Vec<(i64, String, String, String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, recorded_at, identity, action, summary
+                 FROM logbook
+                 ORDER BY id",
+            )?;
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()?
+        };
+
         let mut entries = Vec::new();
-        for line in reader.lines() {
-            let line = line?;
-            if !line.is_empty() {
-                entries.push(serde_json::from_str(&line)?);
-            }
+
+        for (logbook_id, recorded_at_str, identity, action_str, summary) in rows {
+            // Step 2: load observations for this entry.
+            let observations: Vec<Observation> = {
+                let mut stmt = conn.prepare(
+                    "SELECT bo.target, bo.observed_at, b.data
+                     FROM bearing_observations bo
+                     JOIN blobs b ON bo.blob_hash = b.hash
+                     WHERE bo.logbook_id = ?1",
+                )?;
+                stmt.query_map(rusqlite::params![logbook_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                    ))
+                })?
+                .map(|r| -> Result<Observation> {
+                    let (target_str, observed_at_str, compressed) = r?;
+                    let target: Observe = serde_json::from_str(&target_str)?;
+                    let payload_json = zstd::decode_all(compressed.as_slice())?;
+                    let payload: Payload = serde_json::from_slice(&payload_json)?;
+                    let observed_at = observed_at_str
+                        .parse::<jiff::Timestamp>()
+                        .map_err(|e| StorageError::Corrupt(format!("invalid observed_at: {e}")))?;
+                    Ok(Observation {
+                        target,
+                        payload,
+                        observed_at,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?
+            };
+
+            let bearing = Bearing {
+                observations,
+                summary,
+            };
+            let timestamp = recorded_at_str
+                .parse::<Timestamp>()
+                .map_err(|e| StorageError::Corrupt(format!("invalid recorded_at: {e}")))?;
+            let kind: EntryKind = serde_json::from_str(&action_str)?;
+
+            entries.push(LogbookEntry {
+                bearing,
+                author: identity,
+                timestamp,
+                kind,
+            });
         }
+
         Ok(entries)
     }
 }
@@ -57,9 +131,9 @@ impl Storage {
 mod tests {
     use super::*;
 
-    use jiff::Timestamp;
+    use std::path::PathBuf;
+
     use tempfile::TempDir;
-    use uuid::Uuid;
 
     use crate::model::*;
 
@@ -78,55 +152,135 @@ mod tests {
         }
     }
 
-    fn sample_bearing() -> Bearing {
-        Bearing {
-            observations: vec![],
-            summary: "The project has a single main.rs file.".into(),
+    fn sample_observation() -> Observation {
+        Observation {
+            target: Observe::DirectoryTree {
+                root: PathBuf::from("src/"),
+                skip: vec![],
+                max_depth: None,
+            },
+            payload: Payload::DirectoryTree {
+                listings: vec![DirectoryListing {
+                    path: PathBuf::from("src/"),
+                    entries: vec![DirectoryEntry {
+                        name: "main.rs".into(),
+                        is_dir: false,
+                        size_bytes: Some(42),
+                    }],
+                }],
+            },
+            observed_at: Timestamp::now(),
         }
     }
 
-    fn sample_steer_entry() -> LogbookEntry {
-        LogbookEntry {
-            bearing: sample_bearing(),
-            author: "john-agent".into(),
-            timestamp: Timestamp::now(),
-            kind: EntryKind::Steer(Steer::Comment {
-                number: 42,
-                body: "Here's my plan.".into(),
-                target: CommentTarget::Issue,
-            }),
-        }
+    fn steer_kind() -> EntryKind {
+        EntryKind::Steer(Steer::Comment {
+            number: 42,
+            body: "Here's my plan.".into(),
+            target: CommentTarget::Issue,
+        })
     }
 
-    fn sample_log_entry() -> LogbookEntry {
-        LogbookEntry {
-            bearing: sample_bearing(),
-            author: "john-agent".into(),
-            timestamp: Timestamp::now(),
-            kind: EntryKind::Log("Waiting for review.".into()),
-        }
+    fn log_kind() -> EntryKind {
+        EntryKind::Log("Waiting for review.".into())
     }
 
     #[test]
-    fn append_and_load_logbook_entries() {
+    fn seal_writes_logbook_and_clears_slate() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+        storage
+            .append_slate(voyage.id, &sample_observation())
+            .unwrap();
+
+        storage
+            .seal_slate(
+                voyage.id,
+                "john-agent",
+                Timestamp::now(),
+                "Plan looks good",
+                &steer_kind(),
+            )
+            .unwrap();
+
+        // Slate is cleared.
+        let slate = storage.load_slate(voyage.id).unwrap();
+        assert!(slate.is_empty());
+
+        // Logbook has one entry.
+        let entries = storage.load_logbook(voyage.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].bearing.summary, "Plan looks good");
+        assert_eq!(entries[0].author, "john-agent");
+        assert!(matches!(entries[0].kind, EntryKind::Steer(_)));
+    }
+
+    #[test]
+    fn seal_preserves_bearing_observations() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+        storage
+            .append_slate(voyage.id, &sample_observation())
+            .unwrap();
+
+        storage
+            .seal_slate(
+                voyage.id,
+                "john-agent",
+                Timestamp::now(),
+                "summary",
+                &steer_kind(),
+            )
+            .unwrap();
+
+        let entries = storage.load_logbook(voyage.id).unwrap();
+        assert_eq!(entries[0].bearing.observations.len(), 1);
+        assert!(matches!(
+            entries[0].bearing.observations[0].target,
+            Observe::DirectoryTree { .. }
+        ));
+    }
+
+    #[test]
+    fn seal_empty_slate_is_valid() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
         storage
-            .append_entry(voyage.id, &sample_steer_entry())
+            .seal_slate(
+                voyage.id,
+                "john-agent",
+                Timestamp::now(),
+                "nothing observed",
+                &log_kind(),
+            )
+            .unwrap();
+
+        let entries = storage.load_logbook(voyage.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].bearing.observations.is_empty());
+    }
+
+    #[test]
+    fn multiple_seals_accumulate_logbook_entries() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        storage
+            .seal_slate(voyage.id, "a", Timestamp::now(), "first", &steer_kind())
             .unwrap();
         storage
-            .append_entry(voyage.id, &sample_log_entry())
+            .seal_slate(voyage.id, "b", Timestamp::now(), "second", &log_kind())
             .unwrap();
 
         let entries = storage.load_logbook(voyage.id).unwrap();
         assert_eq!(entries.len(), 2);
-        assert!(matches!(
-            entries[0].kind,
-            EntryKind::Steer(Steer::Comment { .. })
-        ));
-        assert!(matches!(entries[1].kind, EntryKind::Log(_)));
+        assert_eq!(entries[0].bearing.summary, "first");
+        assert_eq!(entries[1].bearing.summary, "second");
     }
 
     #[test]
@@ -137,23 +291,5 @@ mod tests {
 
         let entries = storage.load_logbook(voyage.id).unwrap();
         assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn load_logbook_nonexistent_voyage_fails() {
-        let (_dir, storage) = test_storage();
-        let err = storage.load_logbook(Uuid::new_v4()).unwrap_err();
-
-        assert!(matches!(err, StorageError::VoyageNotFound(_)));
-    }
-
-    #[test]
-    fn append_entry_nonexistent_voyage_fails() {
-        let (_dir, storage) = test_storage();
-        let err = storage
-            .append_entry(Uuid::new_v4(), &sample_steer_entry())
-            .unwrap_err();
-
-        assert!(matches!(err, StorageError::VoyageNotFound(_)));
     }
 }

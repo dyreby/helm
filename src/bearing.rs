@@ -29,7 +29,10 @@ pub fn observe(target: &Observe, gh_config_dir: Option<&Path>) -> Observation {
 /// multiple times.
 /// Chronological order is preserved in the output.
 ///
-/// TODO: large payloads should spill to the hold (deferred — hold storage not yet implemented).
+/// Note: with `SQLite` storage, the slate enforces set semantics at write time.
+/// The dedup logic here is a no-op in production but retained for the unit tests below.
+// TODO: remove once `helm log show` or similar is built and this can be validated end-to-end.
+#[allow(dead_code)]
 pub fn seal(observations: Vec<Observation>, summary: String) -> Bearing {
     // Iterate in reverse (newest first), keep the first occurrence of each target,
     // then reverse to restore chronological order.

@@ -22,8 +22,8 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{
-    bearing, identity,
-    model::{CommentTarget, EntryKind, LogbookEntry, Steer, Voyage},
+    identity,
+    model::{CommentTarget, EntryKind, Steer, Voyage},
     steer,
     storage::Storage,
 };
@@ -184,6 +184,10 @@ pub fn run(storage: &Storage) -> Result<(), String> {
                 let voyage = resolve_voyage(storage, &voyage)?;
                 slate::cmd_list(storage, &voyage)
             }
+            SlateCommand::Erase { voyage, target } => {
+                let voyage = resolve_voyage(storage, &voyage)?;
+                slate::cmd_erase(storage, &voyage, &target)
+            }
             SlateCommand::Clear { voyage } => {
                 let voyage = resolve_voyage(storage, &voyage)?;
                 slate::cmd_clear(storage, &voyage)
@@ -234,33 +238,15 @@ fn cmd_steer(
     // 1. Build the typed steer action from CLI args.
     let steer_action = build_steer_action(action);
 
-    // 2. Seal the slate into a bearing — capture what we knew going in.
-    let observations = storage
-        .load_slate(voyage.id)
-        .map_err(|e| format!("failed to load slate: {e}"))?;
-    let bearing = bearing::seal(observations, summary.to_string());
-
-    // 3. Perform the action — mutate collaborative state.
-    //    Happens after seal so a failed perform leaves the logbook untouched.
-    //    If perform succeeds but append fails, the steer is unlogged — acceptable
-    //    gap for now; true atomicity would require a WAL or similar.
+    // 2. Perform the action — mutate collaborative state.
+    //    If perform fails, the slate is untouched and the logbook is unchanged.
     steer::perform(&steer_action, &gh_config)?;
 
-    // 4. Record one logbook entry.
-    let entry = LogbookEntry {
-        bearing,
-        author: identity.to_string(),
-        timestamp: Timestamp::now(),
-        kind: EntryKind::Steer(steer_action),
-    };
+    // 3. Atomically seal the slate, write the logbook entry, and clear the slate.
+    let kind = EntryKind::Steer(steer_action);
     storage
-        .append_entry(voyage.id, &entry)
-        .map_err(|e| format!("failed to append logbook entry: {e}"))?;
-
-    // 5. Clear the slate.
-    storage
-        .clear_slate(voyage.id)
-        .map_err(|e| format!("failed to clear slate: {e}"))?;
+        .seal_slate(voyage.id, identity, Timestamp::now(), summary, &kind)
+        .map_err(|e| format!("failed to seal slate: {e}"))?;
 
     eprintln!("Steered: {}", describe_steer_action(action));
     Ok(())
@@ -273,27 +259,12 @@ fn cmd_log(
     summary: &str,
     status: &str,
 ) -> Result<(), String> {
-    // 1. Seal the slate into a bearing — capture what we knew going in.
-    let observations = storage
-        .load_slate(voyage.id)
-        .map_err(|e| format!("failed to load slate: {e}"))?;
-    let bearing = bearing::seal(observations, summary.to_string());
-
-    // 2. Record one logbook entry. No collaborative state is mutated.
-    let entry = LogbookEntry {
-        bearing,
-        author: identity.to_string(),
-        timestamp: Timestamp::now(),
-        kind: EntryKind::Log(status.to_string()),
-    };
+    // Atomically seal the slate, write the logbook entry, and clear the slate.
+    // No collaborative state is mutated.
+    let kind = EntryKind::Log(status.to_string());
     storage
-        .append_entry(voyage.id, &entry)
-        .map_err(|e| format!("failed to append logbook entry: {e}"))?;
-
-    // 3. Clear the slate.
-    storage
-        .clear_slate(voyage.id)
-        .map_err(|e| format!("failed to clear slate: {e}"))?;
+        .seal_slate(voyage.id, identity, Timestamp::now(), summary, &kind)
+        .map_err(|e| format!("failed to seal slate: {e}"))?;
 
     eprintln!("Logged: {status}");
     Ok(())
