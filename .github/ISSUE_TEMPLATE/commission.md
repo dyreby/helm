@@ -14,7 +14,7 @@ labels: ["commission"]
 
 ## Missions
 
-<!-- Prioritized checklist of issues. Each one requires a voyage to complete. -->
+<!-- Ordered checklist of issues. Each mission is one issue with its own PR — complete them in order. -->
 
 - [ ] #
 
