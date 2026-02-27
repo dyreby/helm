@@ -34,7 +34,7 @@ Only `steer` and `log` write to the logbook. That's the invariant.
 | Noun | Verb | Example |
 |------|------|---------|
 | **Observation** | observe | "Observe an issue" — look at it, capture what came back |
-| **Bearing** | seal | "Seal a bearing" — curate the working set at decision time |
+| **Bearing** | seal | "Seal a bearing" — curate the working set of observations at decision time |
 | **Voyage** | start / end | "Start a voyage" / "End a voyage" |
 
 The logbook **records** — that's its job, not the caller's verb. You observe, steer, and log. The logbook captures what happened.
@@ -49,7 +49,7 @@ An observation has three parts:
 
 - **target** — what you looked at (`Observe` variant)
 - **payload** — what came back (inline if small, hold reference if large)
-- **timestamp** — when
+- **timestamp** — when the observation was made
 
 The `Observe` enum is the extension surface for new observation types. Add a variant to teach helm to look at something new.
 
@@ -103,7 +103,7 @@ GitHub is the current collaborative boundary. The model supports other boundarie
 
 Observations accumulate in the working set between steer/log commands. When either is called, helm curates the working set into a bearing:
 
-- Deduplicate by resource key (keep newest per resource)
+- Deduplicate by target (keep the newest observation when the same thing was observed multiple times)
 - Keep everything since last steer/log
 - Cap by count/size; spill large payloads to the hold
 - Seal into the log entry's bearing
@@ -123,6 +123,7 @@ voyage/<id>/hold/<sha256>.zst
 - Large payloads get compressed and stored in the hold, referenced by hash.
 - Free deduplication within a voyage — same content, same hash, stored once.
 - Not cleared when the working set clears.
+- Garbage collection of unused hold entries (payloads not referenced by any sealed bearing) can be added later.
 
 ## Example Flow: Advancing an Issue
 
@@ -271,12 +272,12 @@ enum Steer {
     CreateIssue { /* TBD */ },
     EditIssue { /* TBD */ },
     CloseIssue { /* TBD */ },
-    CreatePr { /* TBD */ },
-    EditPr { /* TBD */ },
-    ClosePr { /* TBD */ },
+    CreatePullRequest { /* TBD */ },
+    EditPullRequest { /* TBD */ },
+    ClosePullRequest { /* TBD */ },
     RequestReview { /* TBD */ },
     ReplyInline { /* TBD */ },
-    MergePr { /* TBD */ },
+    MergePullRequest { /* TBD */ },
 }
 ```
 
@@ -336,6 +337,8 @@ Identity is recorded per log entry, not per voyage. Multiple agents or people ca
 How identity is determined (config, flags, environment) is implementation detail.
 
 ## Open Questions
+
+These are implementation questions that don't affect the design decisions captured in [ADR 001](docs/adr/001-observe-steer-log.md).
 
 - **Bearing summary**: who writes it? Always the caller? Auto-generated? Optional?
 - **Payload threshold**: at what size do payloads spill to the hold?
