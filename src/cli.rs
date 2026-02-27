@@ -1,6 +1,6 @@
 //! CLI interface for Helm.
 //!
-//! Designed for agents and humans alike to record voyages and bearings from the command line.
+//! Designed for agents and humans alike to navigate voyages from the command line.
 //! Each subcommand is non-interactive: arguments in, structured output out.
 //!
 //! Commands split into two groups:
@@ -33,7 +33,7 @@ use crate::{bearing, storage::Storage};
 #[command(name = "helm", after_long_help = WORKFLOW_HELP)]
 pub struct Cli {
     /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
-    /// Required for observe, record, act, complete, and log.
+    /// Required for observe, bearing, action, complete, and log.
     #[arg(long, global = true)]
     voyage: Option<String>,
 
@@ -47,20 +47,20 @@ const WORKFLOW_HELP: &str = r#"Workflow: resolving an issue
   2. Do the work — fix the bug, open the PR, get it merged.
   3. helm --voyage a3b complete --summary "Fixed null check in widget init"
 
-Stopping mid-voyage? Record a bearing so the next session has context:
+Stopping mid-voyage? Take a bearing so the next session has context:
   helm --voyage a3b observe rust-project . --out obs.json
-  helm --voyage a3b record --reading "Halfway through, refactoring widget module" --observation obs.json
+  helm --voyage a3b bearing --reading "Halfway through, refactoring widget module" --observation obs.json
 
 Observe GitHub:
   helm --voyage a3b observe github-pr 42 --focus summary --focus diff
   helm --voyage a3b observe github-issue 10 --focus comments
   helm --voyage a3b observe github-repo --focus issues
 
-Record actions:
-  helm --voyage a3b act commit --message "Fix null check in widget init"
-  helm --voyage a3b act push --branch fix-widget
-  helm --voyage a3b act create-pull-request --branch fix-widget --title "Fix widget"
-  helm --voyage a3b act merge-pull-request 45
+Perform actions:
+  helm --voyage a3b action commit --message "Fix null check in widget init"
+  helm --voyage a3b action push --branch fix-widget
+  helm --voyage a3b action create-pull-request --branch fix-widget --title "Fix widget"
+  helm --voyage a3b action merge-pull-request 45
 
 Check on voyages:
   helm voyage list              → see active voyages
@@ -89,17 +89,17 @@ pub enum Command {
         out: Option<PathBuf>,
     },
 
-    /// Record a bearing: attach a reading to one or more observations.
+    /// Take a bearing: attach a reading to one or more observations.
     ///
     /// Reads observations from `--observation` files or stdin (single observation),
     /// attaches the reading, and writes the bearing to the logbook.
     ///
     /// Bearings exist for continuity, not just documentation.
-    /// Record one when you'd need context if you had to stop and come back
+    /// Take one when you'd need context if you had to stop and come back
     /// in a new session. If you're finishing in this session, skip the bearing
     /// and use `helm --voyage <id> complete --summary` instead.
     /// Requires `--voyage`.
-    Record {
+    Bearing {
         /// Your reading of the observed mark.
         #[arg(long)]
         reading: String,
@@ -113,15 +113,16 @@ pub enum Command {
 
     /// Perform an action.
     ///
-    /// Each action records a single act (push, create PR, merge, comment, etc.)
+    /// Each action performs a single operation (push, create PR, merge, comment, etc.)
+    /// and records it in the logbook.
     /// Identity is inherited from the voyage.
     /// The logbook captures what happened, not what was planned —
     /// failed operations are not recorded.
     /// Requires `--voyage`.
-    Act {
-        /// The act to perform.
+    Action {
+        /// The action to perform.
         #[command(subcommand)]
-        act: ActCommand,
+        action: ActionCommand,
     },
 
     /// Mark a voyage as completed.
@@ -146,9 +147,9 @@ pub enum Command {
     Log,
 }
 
-/// Act subcommands — one per kind of action.
+/// Action subcommands — one per kind of action.
 #[derive(Debug, Subcommand)]
-pub enum ActCommand {
+pub enum ActionCommand {
     /// Commit staged changes.
     ///
     /// Commits whatever is currently staged.
@@ -440,16 +441,16 @@ pub fn run(config: &Config, storage: &Storage) -> Result<(), String> {
             let voyage = require_voyage(storage, cli.voyage.as_deref())?;
             cmd_observe(&voyage, source, out)
         }
-        Command::Record {
+        Command::Bearing {
             reading,
             observation,
         } => {
             let voyage = require_voyage(storage, cli.voyage.as_deref())?;
-            cmd_record(storage, &voyage, &reading, &observation)
+            cmd_bearing(storage, &voyage, &reading, &observation)
         }
-        Command::Act { act } => {
+        Command::Action { action } => {
             let voyage = require_voyage(storage, cli.voyage.as_deref())?;
-            cmd_act(storage, &voyage, &act)
+            cmd_action(storage, &voyage, &action)
         }
         Command::Complete { summary } => {
             let voyage = require_voyage(storage, cli.voyage.as_deref())?;
@@ -589,7 +590,7 @@ fn cmd_observe(
     Ok(())
 }
 
-fn cmd_record(
+fn cmd_bearing(
     storage: &Storage,
     voyage: &Voyage,
     reading: &str,
@@ -629,23 +630,24 @@ fn cmd_record(
 
     // Seal the bearing with marks + refs (no inlined sightings).
     let sealed = bearing::record_bearing(&observations, observation_refs, reading.to_string())
-        .map_err(|e| format!("failed to record bearing: {e}"))?;
+        .map_err(|e| format!("failed to take bearing: {e}"))?;
 
     // Write bearing to logbook.
     storage
         .append_entry(voyage.id, &LogbookEntry::Bearing(sealed.clone()))
         .map_err(|e| format!("failed to save bearing: {e}"))?;
 
-    eprintln!(
-        "Bearing recorded for voyage {}",
-        &voyage.id.to_string()[..8]
-    );
+    eprintln!("Bearing taken for voyage {}", &voyage.id.to_string()[..8]);
     eprintln!("Reading: {reading}");
 
     Ok(())
 }
 
-fn cmd_act(storage: &Storage, voyage: &Voyage, act_cmd: &ActCommand) -> Result<(), String> {
+fn cmd_action(
+    storage: &Storage,
+    voyage: &Voyage,
+    action_cmd: &ActionCommand,
+) -> Result<(), String> {
     if matches!(voyage.status, VoyageStatus::Completed { .. }) {
         return Err(format!(
             "voyage {} is already completed",
@@ -654,7 +656,7 @@ fn cmd_act(storage: &Storage, voyage: &Voyage, act_cmd: &ActCommand) -> Result<(
     }
 
     let gh_config = gh_config_dir(&voyage.identity)?;
-    let act = act(act_cmd, &gh_config)?;
+    let act = perform(action_cmd, &gh_config)?;
 
     let action = Action {
         id: Uuid::new_v4(),
@@ -667,8 +669,8 @@ fn cmd_act(storage: &Storage, voyage: &Voyage, act_cmd: &ActCommand) -> Result<(
         .map_err(|e| format!("failed to save action: {e}"))?;
 
     let short_id = &voyage.id.to_string()[..8];
-    eprintln!("Action recorded for voyage {short_id}");
-    eprintln!("  {}", format_act(&action.kind));
+    eprintln!("Action performed for voyage {short_id}");
+    eprintln!("  {}", format_action(&action.kind));
 
     Ok(())
 }
@@ -692,31 +694,35 @@ fn gh_config_dir(identity: &str) -> Result<PathBuf, String> {
     Ok(config_dir)
 }
 
-/// Dispatch the act command and return the structured `ActionKind` on success.
-fn act(act_cmd: &ActCommand, gh_config: &PathBuf) -> Result<ActionKind, String> {
-    match act_cmd {
-        ActCommand::Commit { message } => commit(message),
-        ActCommand::Push { branch } => push(branch),
-        ActCommand::CreatePullRequest {
+/// Dispatch the action command and return the structured `ActionKind` on success.
+fn perform(action_cmd: &ActionCommand, gh_config: &PathBuf) -> Result<ActionKind, String> {
+    match action_cmd {
+        ActionCommand::Commit { message } => commit(message),
+        ActionCommand::Push { branch } => push(branch),
+        ActionCommand::CreatePullRequest {
             branch,
             title,
             body,
             base,
             reviewer,
         } => create_pr(gh_config, branch, title, body.as_deref(), base, reviewer),
-        ActCommand::MergePullRequest { number } => merge_pr(gh_config, *number),
-        ActCommand::CommentOnPullRequest { number, body } => comment_pr(gh_config, *number, body),
-        ActCommand::ReplyOnPullRequest {
+        ActionCommand::MergePullRequest { number } => merge_pr(gh_config, *number),
+        ActionCommand::CommentOnPullRequest { number, body } => {
+            comment_pr(gh_config, *number, body)
+        }
+        ActionCommand::ReplyOnPullRequest {
             number,
             comment_id,
             body,
         } => reply_pr(gh_config, *number, *comment_id, body),
-        ActCommand::RequestReview { number, reviewer } => {
+        ActionCommand::RequestReview { number, reviewer } => {
             request_review(gh_config, *number, reviewer)
         }
-        ActCommand::CreateIssue { title, body } => create_issue(gh_config, title, body.as_deref()),
-        ActCommand::CloseIssue { number } => close_issue(gh_config, *number),
-        ActCommand::CommentOnIssue { number, body } => comment_issue(gh_config, *number, body),
+        ActionCommand::CreateIssue { title, body } => {
+            create_issue(gh_config, title, body.as_deref())
+        }
+        ActionCommand::CloseIssue { number } => close_issue(gh_config, *number),
+        ActionCommand::CommentOnIssue { number, body } => comment_issue(gh_config, *number, body),
     }
 }
 
@@ -975,7 +981,7 @@ fn parse_issue_number_from_url(url: &str) -> Result<u64, String> {
 }
 
 /// Format an act for human-readable display.
-fn format_act(act: &ActionKind) -> String {
+fn format_action(act: &ActionKind) -> String {
     match act {
         ActionKind::Commit { sha } => {
             format!("committed ({sha})")
@@ -1114,7 +1120,7 @@ fn cmd_log(storage: &Storage, voyage: &Voyage) -> Result<(), String> {
             }
             LogbookEntry::Action(a) => {
                 println!("── Action {} ── {}", i + 1, a.performed_at);
-                println!("  {}", format_act(&a.kind));
+                println!("  {}", format_action(&a.kind));
                 println!();
             }
         }
@@ -1205,7 +1211,7 @@ mod tests {
         let kind = ActionKind::Commit {
             sha: "abc1234".to_string(),
         };
-        assert_eq!(format_act(&kind), "committed (abc1234)");
+        assert_eq!(format_action(&kind), "committed (abc1234)");
     }
 
     #[test]
@@ -1214,7 +1220,7 @@ mod tests {
             branch: "main".to_string(),
             sha: "abc1234".to_string(),
         };
-        assert_eq!(format_act(&kind), "pushed to main (abc1234)");
+        assert_eq!(format_action(&kind), "pushed to main (abc1234)");
     }
 
     #[test]
@@ -1236,7 +1242,7 @@ mod tests {
                 number: 10,
                 action: pr_action,
             };
-            assert_eq!(format_act(&kind), expected);
+            assert_eq!(format_action(&kind), expected);
         }
     }
 
@@ -1252,7 +1258,7 @@ mod tests {
                 number: 5,
                 action: issue_action,
             };
-            assert_eq!(format_act(&kind), expected);
+            assert_eq!(format_action(&kind), expected);
         }
     }
 }
