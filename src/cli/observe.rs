@@ -13,7 +13,7 @@ use super::{format::format_pr_focus, target::ObserveTarget};
 pub(super) fn cmd_observe(
     storage: &Storage,
     voyage: &Voyage,
-    identity: &str,
+    identity: Option<&str>,
     target: &ObserveTarget,
     out: Option<PathBuf>,
 ) -> Result<(), String> {
@@ -54,7 +54,8 @@ pub(super) fn cmd_observe(
     };
 
     let gh_config = if needs_gh {
-        Some(super::gh_config_dir(identity)?)
+        let id = identity.ok_or("GitHub observations require --as <identity>".to_string())?;
+        Some(super::gh_config_dir(id)?)
     } else {
         None
     };

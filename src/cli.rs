@@ -71,8 +71,9 @@ pub enum Command {
         voyage: String,
 
         /// Identity to use for GitHub auth (e.g. `dyreby`).
+        /// Required for GitHub observations; ignored for local observations.
         #[arg(long = "as")]
-        identity: String,
+        identity: Option<String>,
 
         #[command(subcommand)]
         target: ObserveTarget,
@@ -169,7 +170,7 @@ pub fn run(storage: &Storage) -> Result<(), String> {
             out,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
-            observe::cmd_observe(storage, &voyage, &identity, target, out)
+            observe::cmd_observe(storage, &voyage, identity.as_deref(), target, out)
         }
         Command::Steer {
             voyage,
