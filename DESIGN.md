@@ -44,7 +44,7 @@ A complete voyage, from start to finish.
 ### 1. Start the voyage
 
 ```bash
-$ helm voyage new "Resolve #42: fix widget crash" --kind resolve-issue
+$ helm voyage new --as john-agent --kind resolve-issue "Resolve #42: fix widget crash"
 a3b0fc12-...
 ```
 
@@ -57,7 +57,7 @@ Creates:
 ### 2. Observe the world
 
 ```bash
-$ helm observe rust-project . --out obs.json
+$ helm --voyage a3b observe rust-project . --out obs.json
 Observation written to obs.json
 ```
 
@@ -82,7 +82,7 @@ then targeted reads where it matters — is central to how Helm works.
 ### 3. Record a bearing
 
 ```bash
-$ helm record a3b --reading "Widget module has a null check missing in init(). Test coverage exists but doesn't hit this path." --observation obs.json
+$ helm --voyage a3b record --reading "Widget module has a null check missing in init(). Test coverage exists but doesn't hit this path." --observation obs.json
 Bearing recorded for voyage a3b0fc12
 Reading: Widget module has a null check missing in init()...
 ```
@@ -103,19 +103,16 @@ Scanning the logbook later, the bearing reads: *"Looked at the Rust project. Wid
 ### 4. Do the work, then act
 
 ```bash
-$ helm act a3b --as john-agent commit --message "Fix null check in widget init"
+$ helm --voyage a3b act commit --message "Fix null check in widget init"
 Action recorded for voyage a3b0fc12
-  as: john-agent
   committed (abc1234)
 
-$ helm act a3b --as john-agent push --branch fix-widget
+$ helm --voyage a3b act push --branch fix-widget
 Action recorded for voyage a3b0fc12
-  as: john-agent
   pushed to fix-widget (abc1234)
 
-$ helm act a3b --as john-agent create-pull-request --branch fix-widget --title "Fix widget crash" --reviewer dyreby
+$ helm --voyage a3b act create-pull-request --branch fix-widget --title "Fix widget crash" --reviewer dyreby
 Action recorded for voyage a3b0fc12
-  as: john-agent
   created PR #45
 ```
 
@@ -124,7 +121,7 @@ Each act performs the operation *and* records it. The logbook now has three `Log
 ### 5. Complete the voyage
 
 ```bash
-$ helm voyage complete a3b --summary "Fixed null check in widget init. PR #45 merged."
+$ helm --voyage a3b complete --summary "Fixed null check in widget init. PR #45 merged."
 Voyage a3b0fc12 completed
 Summary: Fixed null check in widget init. PR #45 merged.
 ```
@@ -132,8 +129,9 @@ Summary: Fixed null check in widget init. PR #45 merged.
 ### The logbook tells the story
 
 ```bash
-$ helm voyage log a3b
+$ helm --voyage a3b log
 Voyage: Resolve #42: fix widget crash
+Identity: john-agent
 Created: 2026-02-26T17:00:00Z
 Status: completed (2026-02-26T17:30:00Z)
 Summary: Fixed null check in widget init. PR #45 merged.
@@ -143,15 +141,12 @@ Summary: Fixed null check in widget init. PR #45 merged.
   Reading: Widget module has a null check missing in init().
 
 ── Action 2 ── 2026-02-26T17:14:00Z
-  as: john-agent
   committed (abc1234)
 
 ── Action 3 ── 2026-02-26T17:15:00Z
-  as: john-agent
   pushed to fix-widget (abc1234)
 
 ── Action 4 ── 2026-02-26T17:16:00Z
-  as: john-agent
   created PR #45
 ```
 
@@ -400,11 +395,9 @@ enum ReadingSource {
 ///
 /// Only successful operations are recorded — the logbook captures
 /// what happened, not what was attempted.
+/// Identity is on the voyage, not the action.
 struct Action {
     id: Uuid,
-
-    /// Which identity performed this action (e.g. "dyreby", "john-agent").
-    identity: String,
 
     /// What was done.
     kind: ActionKind,
@@ -453,8 +446,9 @@ enum IssueAction {
 }
 ```
 
-Identity selects which GitHub account to use.
+Identity is set on the voyage at creation.
 Each identity has its own `gh` config directory under `~/.helm/gh-config/<identity>/`.
+A default identity is configured in `~/.helm/config.toml` and used when `--as` is omitted.
 
 ### Logbook
 
@@ -480,6 +474,12 @@ One file per voyage at `~/.helm/voyages/<uuid>/logbook.jsonl`.
 /// A unit of work with intent, logbook, and outcome.
 struct Voyage {
     id: Uuid,
+
+    /// The identity sailing this voyage (e.g. "john-agent", "dyreby").
+    /// Set at creation, inherited by all commands.
+    /// Can change via spelling (handoff to another identity).
+    identity: String,
+
     kind: VoyageKind,
     intent: String,
     created_at: Timestamp,
@@ -544,6 +544,7 @@ If it feels wrong, the human challenges it and the agent re-generates.
 
 ```
 ~/.helm/
+  config.toml           # default-identity and future settings
   voyages/
     <uuid>/
       voyage.json       # Voyage metadata
@@ -563,28 +564,35 @@ Pruning is manual: delete files from `observations/`.
 
 ## CLI
 
+Commands split into two groups: voyage lifecycle (no `--voyage` needed)
+and voyage-scoped operations (require `--voyage`).
+
+Identity is set at voyage creation and inherited by all commands.
+Helm is for voyages only — no voyage, no helm.
+
 ```
-helm voyage new <intent> [--kind open-waters|resolve-issue]
+helm voyage new --as <identity> <intent> [--kind open-waters|resolve-issue]
 helm voyage list
-helm voyage log <id>
-helm voyage complete <id> [--summary <text>]
 
-helm observe files [--list <dir>...] [--read <file>...]
-helm observe rust-project <path>
+helm --voyage <id> observe files [--list <dir>...] [--read <file>...]
+helm --voyage <id> observe rust-project <path>
 
-helm record <voyage-id> --reading <text> [--observation <file>...]
+helm --voyage <id> record --reading <text> [--observation <file>...]
 
-helm act <voyage-id> --as <identity> <act-subcommand>
+helm --voyage <id> act <act-subcommand>
+
+helm --voyage <id> complete [--summary <text>]
+helm --voyage <id> log
 ```
 
+`--voyage` takes a full UUID or unambiguous prefix (e.g. `a3b`).
 `helm observe` outputs JSON to stdout or `--out <file>`.
 `helm record` reads observations from `--observation` files or stdin.
 `helm act` performs the operation and records it in the logbook.
+Identity for `act` comes from the voyage — no per-command `--as`.
 
 ## Open Questions
 
-- **List/read modeling**: flat vectors work for Files.
-  Will GitHub need a richer structure, or can it stay flat?
 - **Context mark**: structure TBD.
   Minimum viable: a description string and a reading.
 
