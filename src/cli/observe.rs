@@ -1,4 +1,4 @@
-//! Observe command: gather observations into the slate.
+//! Observe command: gather observations onto the slate.
 
 use std::{fs, path::PathBuf};
 
