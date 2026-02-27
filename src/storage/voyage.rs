@@ -83,7 +83,6 @@ mod tests {
         Voyage {
             id: Uuid::new_v4(),
             identity: "john-agent".into(),
-            kind: VoyageKind::OpenWaters,
             intent: "Fix the widget".into(),
             created_at: Timestamp::now(),
             status: VoyageStatus::Active,
@@ -127,14 +126,14 @@ mod tests {
         let mut voyage = sample_voyage();
 
         storage.create_voyage(&voyage).unwrap();
-        voyage.status = VoyageStatus::Completed {
-            completed_at: Timestamp::now(),
-            summary: Some("Done.".into()),
+        voyage.status = VoyageStatus::Ended {
+            ended_at: Timestamp::now(),
+            status: Some("Done.".into()),
         };
         storage.update_voyage(&voyage).unwrap();
 
         let loaded = storage.load_voyage(voyage.id).unwrap();
-        assert!(matches!(loaded.status, VoyageStatus::Completed { .. }));
+        assert!(matches!(loaded.status, VoyageStatus::Ended { .. }));
     }
 
     #[test]

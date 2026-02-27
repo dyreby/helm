@@ -2,6 +2,7 @@ mod bearing;
 mod cli;
 mod config;
 mod model;
+// TODO: remove once observe is wired to the working set in #99.
 #[allow(dead_code)]
 mod observe;
 mod storage;

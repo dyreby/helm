@@ -1,4 +1,4 @@
-//! Rust project source kind: project structure and documentation.
+//! `RustProject` observation: project structure and documentation.
 //!
 //! Walks a Rust project tree, respects `.gitignore`, skips `target/`.
 //! Produces a full directory tree (listings) and reads documentation files (contents).
@@ -9,7 +9,7 @@
 
 use std::{fs, path::Path};
 
-use crate::model::{DirectoryListing, FileContent, FileContents, Sighting};
+use crate::model::{DirectoryListing, FileContent, FileContents, Payload};
 
 use super::directory_tree::walk_tree;
 
@@ -111,12 +111,12 @@ fn read_docs(listings: &[DirectoryListing], root: &Path) -> Vec<FileContents> {
 /// Uses the `DirectoryTree` walk logic with `target/` skipped.
 /// The tree gives structure; docs give intent and context.
 /// Source files are left for targeted `FileContents` queries on subsequent observations.
-pub fn observe_rust_project(root: &Path) -> Sighting {
+pub fn observe_rust_project(root: &Path) -> Payload {
     let skip = vec!["target".to_string()];
     let listings = walk_tree(root, &skip, None);
     let contents = read_docs(&listings, root);
 
-    Sighting::RustProject { listings, contents }
+    Payload::RustProject { listings, contents }
 }
 
 #[cfg(test)]
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn tree_includes_all_non_ignored_entries() {
         let dir = setup_rust_project();
-        let Sighting::RustProject {
+        let Payload::RustProject {
             listings,
             contents: _,
         } = observe_rust_project(dir.path())
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn reads_only_docs() {
         let dir = setup_rust_project();
-        let Sighting::RustProject { contents, .. } = observe_rust_project(dir.path()) else {
+        let Payload::RustProject { contents, .. } = observe_rust_project(dir.path()) else {
             unreachable!();
         };
 
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn skips_target_directory() {
         let dir = setup_rust_project();
-        let Sighting::RustProject { listings, contents } = observe_rust_project(dir.path()) else {
+        let Payload::RustProject { listings, contents } = observe_rust_project(dir.path()) else {
             unreachable!();
         };
 
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn tree_includes_nested_structure() {
         let dir = setup_rust_project();
-        let Sighting::RustProject {
+        let Payload::RustProject {
             listings,
             contents: _,
         } = observe_rust_project(dir.path())

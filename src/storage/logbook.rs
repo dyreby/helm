@@ -11,6 +11,8 @@ use crate::model::LogbookEntry;
 
 use super::{Result, Storage, StorageError};
 
+// TODO: remove once steer (#100) and log (#101) are wired to the CLI.
+#[allow(dead_code)]
 impl Storage {
     /// Appends a logbook entry to a voyage's logbook.
     pub fn append_entry(&self, voyage_id: Uuid, entry: &LogbookEntry) -> Result<()> {
@@ -55,8 +57,6 @@ impl Storage {
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
-
     use jiff::Timestamp;
     use tempfile::TempDir;
     use uuid::Uuid;
@@ -73,7 +73,6 @@ mod tests {
         Voyage {
             id: Uuid::new_v4(),
             identity: "john-agent".into(),
-            kind: VoyageKind::OpenWaters,
             intent: "Fix the widget".into(),
             created_at: Timestamp::now(),
             status: VoyageStatus::Active,
@@ -82,28 +81,26 @@ mod tests {
 
     fn sample_bearing() -> Bearing {
         Bearing {
-            marks: vec![Mark::DirectoryTree {
-                root: PathBuf::from("src/"),
-                skip: vec![],
-                max_depth: None,
-            }],
-            observation_refs: vec![1],
-            reading: Reading {
-                text: "The project has a single main.rs file.".into(),
-                history: vec![],
-            },
-            taken_at: Timestamp::now(),
+            observations: vec![],
+            summary: "The project has a single main.rs file.".into(),
         }
     }
 
-    fn sample_action() -> Action {
-        Action {
-            id: Uuid::new_v4(),
-            kind: ActionKind::Push {
-                branch: "main".into(),
-                sha: "abc1234".into(),
-            },
-            performed_at: Timestamp::now(),
+    fn sample_steer_entry() -> LogbookEntry {
+        LogbookEntry {
+            bearing: sample_bearing(),
+            author: "john-agent".into(),
+            timestamp: Timestamp::now(),
+            kind: EntryKind::Steer(Steer::Comment),
+        }
+    }
+
+    fn sample_log_entry() -> LogbookEntry {
+        LogbookEntry {
+            bearing: sample_bearing(),
+            author: "john-agent".into(),
+            timestamp: Timestamp::now(),
+            kind: EntryKind::Log("Waiting for review.".into()),
         }
     }
 
@@ -113,20 +110,17 @@ mod tests {
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
-        let bearing = sample_bearing();
-        let action = sample_action();
-
         storage
-            .append_entry(voyage.id, &LogbookEntry::Bearing(bearing.clone()))
+            .append_entry(voyage.id, &sample_steer_entry())
             .unwrap();
         storage
-            .append_entry(voyage.id, &LogbookEntry::Action(action.clone()))
+            .append_entry(voyage.id, &sample_log_entry())
             .unwrap();
 
         let entries = storage.load_logbook(voyage.id).unwrap();
         assert_eq!(entries.len(), 2);
-        assert!(matches!(entries[0], LogbookEntry::Bearing(_)));
-        assert!(matches!(entries[1], LogbookEntry::Action(_)));
+        assert!(matches!(entries[0].kind, EntryKind::Steer(Steer::Comment)));
+        assert!(matches!(entries[1].kind, EntryKind::Log(_)));
     }
 
     #[test]
@@ -150,9 +144,8 @@ mod tests {
     #[test]
     fn append_entry_nonexistent_voyage_fails() {
         let (_dir, storage) = test_storage();
-        let bearing = sample_bearing();
         let err = storage
-            .append_entry(Uuid::new_v4(), &LogbookEntry::Bearing(bearing))
+            .append_entry(Uuid::new_v4(), &sample_steer_entry())
             .unwrap_err();
 
         assert!(matches!(err, StorageError::VoyageNotFound(_)));

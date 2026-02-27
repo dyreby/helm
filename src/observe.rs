@@ -1,7 +1,7 @@
-//! Observation logic: read the world, produce sightings.
+//! Observation logic: read the world, produce payloads.
 //!
-//! Each source kind has its own submodule that knows how to observe a mark
-//! and return a sighting.
+//! Each target variant has its own submodule that knows how to observe it
+//! and return a payload.
 
 pub mod directory_tree;
 mod file_contents;
@@ -15,32 +15,32 @@ pub use rust_project::observe_rust_project;
 
 use std::path::Path;
 
-use crate::model::{Mark, Sighting};
+use crate::model::{Observe, Payload};
 
-/// Observe a mark and return what was seen.
+/// Observe a target and return what came back.
 ///
 /// Pure observation — reads the world but never modifies it.
-/// GitHub marks require a `gh_config_dir` for authentication.
-pub fn observe(mark: &Mark, gh_config_dir: Option<&Path>) -> Sighting {
-    match mark {
-        Mark::FileContents { paths } => observe_file_contents(paths),
-        Mark::DirectoryTree {
+/// GitHub targets require a `gh_config_dir` for authentication.
+pub fn observe(target: &Observe, gh_config_dir: Option<&Path>) -> Payload {
+    match target {
+        Observe::FileContents { paths } => observe_file_contents(paths),
+        Observe::DirectoryTree {
             root,
             skip,
             max_depth,
         } => observe_directory_tree(root, skip, *max_depth),
-        Mark::RustProject { root } => observe_rust_project(root),
-        Mark::GitHubPullRequest { number, focus } => {
-            let config = gh_config_dir.expect("GitHub marks require gh_config_dir");
+        Observe::RustProject { root } => observe_rust_project(root),
+        Observe::GitHubPullRequest { number, focus } => {
+            let config = gh_config_dir.expect("GitHub targets require gh_config_dir");
             observe_github_pull_request(*number, focus, config)
         }
-        Mark::GitHubIssue { number, focus } => {
-            let config = gh_config_dir.expect("GitHub marks require gh_config_dir");
-            observe_github_issue(*number, focus, config)
+        Observe::GitHubIssue { number } => {
+            let config = gh_config_dir.expect("GitHub targets require gh_config_dir");
+            observe_github_issue(*number, config)
         }
-        Mark::GitHubRepository { focus } => {
-            let config = gh_config_dir.expect("GitHub marks require gh_config_dir");
-            observe_github_repository(focus, config)
+        Observe::GitHubRepository => {
+            let config = gh_config_dir.expect("GitHub targets require gh_config_dir");
+            observe_github_repository(config)
         }
     }
 }

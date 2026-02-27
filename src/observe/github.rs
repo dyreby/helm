@@ -1,64 +1,41 @@
-//! GitHub source kind: PRs, issues, and repository listings.
+//! GitHub observation: PRs, issues, and repository listings.
 //!
 //! Fetches data via the `gh` CLI, authenticated using the voyage's identity.
-//! Each focus item maps to one or more `gh` commands.
+//! Each focus level maps to one or more `gh` commands.
 
-use std::path::Path;
-use std::process::Command;
+use std::{path::Path, process::Command};
 
 use serde::Deserialize;
 
 use crate::model::{
     CheckRun, GitHubComment, GitHubIssueSummary, GitHubPullRequestSummary, GitHubSummary,
-    IssueFocus, IssueSighting, PullRequestFocus, PullRequestSighting, RepositoryFocus,
-    RepositorySighting, ReviewComment, Sighting,
+    IssuePayload, Payload, PullRequestFocus, PullRequestPayload, RepositoryPayload, ReviewComment,
 };
 
-/// Observe a pull request with the requested focus items.
+/// Observe a pull request at the requested focus level.
 ///
-/// Defaults to summary when no focus is specified.
+/// `Summary` fetches metadata and comments.
+/// `Full` fetches everything: metadata, comments, diff, files, checks, and inline reviews.
+/// Defaults to `Summary` when focus is not specified.
 pub fn observe_github_pull_request(
     number: u64,
-    focus: &[PullRequestFocus],
+    focus: &PullRequestFocus,
     gh_config: &Path,
-) -> Sighting {
-    let focus = if focus.is_empty() {
-        &[PullRequestFocus::Summary]
-    } else {
-        focus
+) -> Payload {
+    let summary = fetch_pr_summary(number, gh_config);
+    let comments = fetch_pr_comments(number, gh_config);
+
+    let (files, checks, diff, reviews) = match focus {
+        PullRequestFocus::Summary => (vec![], vec![], None, vec![]),
+        PullRequestFocus::Full => (
+            fetch_pr_files(number, gh_config),
+            fetch_pr_checks(number, gh_config),
+            fetch_pr_diff(number, gh_config),
+            fetch_pr_reviews(number, gh_config),
+        ),
     };
 
-    let mut summary = None;
-    let mut files = Vec::new();
-    let mut checks = Vec::new();
-    let mut diff = None;
-    let mut comments = Vec::new();
-    let mut reviews = Vec::new();
-
-    for item in focus {
-        match item {
-            PullRequestFocus::Summary => {
-                summary = fetch_pr_summary(number, gh_config);
-            }
-            PullRequestFocus::Files => {
-                files = fetch_pr_files(number, gh_config);
-            }
-            PullRequestFocus::Checks => {
-                checks = fetch_pr_checks(number, gh_config);
-            }
-            PullRequestFocus::Diff => {
-                diff = fetch_pr_diff(number, gh_config);
-            }
-            PullRequestFocus::Comments => {
-                comments = fetch_pr_comments(number, gh_config);
-            }
-            PullRequestFocus::Reviews => {
-                reviews = fetch_pr_reviews(number, gh_config);
-            }
-        }
-    }
-
-    Sighting::GitHubPullRequest(Box::new(PullRequestSighting {
+    Payload::GitHubPullRequest(Box::new(PullRequestPayload {
         summary,
         files,
         checks,
@@ -68,58 +45,24 @@ pub fn observe_github_pull_request(
     }))
 }
 
-/// Observe an issue with the requested focus items.
+/// Observe an issue.
 ///
-/// Defaults to summary when no focus is specified.
-pub fn observe_github_issue(number: u64, focus: &[IssueFocus], gh_config: &Path) -> Sighting {
-    let focus = if focus.is_empty() {
-        &[IssueFocus::Summary]
-    } else {
-        focus
-    };
+/// Always fetches metadata and comments.
+pub fn observe_github_issue(number: u64, gh_config: &Path) -> Payload {
+    let summary = fetch_issue_summary(number, gh_config);
+    let comments = fetch_issue_comments(number, gh_config);
 
-    let mut summary = None;
-    let mut comments = Vec::new();
-
-    for item in focus {
-        match item {
-            IssueFocus::Summary => {
-                summary = fetch_issue_summary(number, gh_config);
-            }
-            IssueFocus::Comments => {
-                comments = fetch_issue_comments(number, gh_config);
-            }
-        }
-    }
-
-    Sighting::GitHubIssue(Box::new(IssueSighting { summary, comments }))
+    Payload::GitHubIssue(Box::new(IssuePayload { summary, comments }))
 }
 
-/// Observe a repository with the requested focus items.
+/// Observe a repository.
 ///
-/// Defaults to both issues and pull requests when no focus is specified.
-pub fn observe_github_repository(focus: &[RepositoryFocus], gh_config: &Path) -> Sighting {
-    let focus = if focus.is_empty() {
-        &[RepositoryFocus::Issues, RepositoryFocus::PullRequests]
-    } else {
-        focus
-    };
+/// Always fetches open issues and pull requests.
+pub fn observe_github_repository(gh_config: &Path) -> Payload {
+    let issues = fetch_repo_issues(gh_config);
+    let pull_requests = fetch_repo_pull_requests(gh_config);
 
-    let mut issues = Vec::new();
-    let mut pull_requests = Vec::new();
-
-    for item in focus {
-        match item {
-            RepositoryFocus::Issues => {
-                issues = fetch_repo_issues(gh_config);
-            }
-            RepositoryFocus::PullRequests => {
-                pull_requests = fetch_repo_pull_requests(gh_config);
-            }
-        }
-    }
-
-    Sighting::GitHubRepository(Box::new(RepositorySighting {
+    Payload::GitHubRepository(Box::new(RepositoryPayload {
         issues,
         pull_requests,
     }))

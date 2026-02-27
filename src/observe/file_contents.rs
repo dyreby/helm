@@ -1,19 +1,19 @@
-//! `FileContents` source kind: read specific files.
+//! `FileContents` observation: read specific files.
 //!
 //! Reads file contents, distinguishing text from binary.
 
 use std::{fs, path::Path};
 
-use crate::model::{FileContent, FileContents, Sighting};
+use crate::model::{FileContent, FileContents, Payload};
 
 /// Read specific files and return their contents.
 ///
 /// Each path produces a `FileContents` entry (text, binary, or error).
 /// Paths that don't exist or can't be read produce error entries rather than panics.
 /// Observation is always total.
-pub fn observe_file_contents(paths: &[impl AsRef<Path>]) -> Sighting {
+pub fn observe_file_contents(paths: &[impl AsRef<Path>]) -> Payload {
     let contents = paths.iter().map(|p| read_file(p.as_ref())).collect();
-    Sighting::FileContents { contents }
+    Payload::FileContents { contents }
 }
 
 /// Read a file and classify its content.
@@ -54,8 +54,8 @@ mod tests {
         fs::write(dir.path().join("hello.txt"), "hello world").unwrap();
         let read = vec![dir.path().join("hello.txt")];
 
-        let Sighting::FileContents { contents } = observe_file_contents(&read) else {
-            panic!("expected FileContents sighting");
+        let Payload::FileContents { contents } = observe_file_contents(&read) else {
+            panic!("expected FileContents payload");
         };
 
         assert_eq!(contents.len(), 1);
@@ -71,8 +71,8 @@ mod tests {
         fs::write(dir.path().join("empty.txt"), "").unwrap();
         let read = vec![dir.path().join("empty.txt")];
 
-        let Sighting::FileContents { contents } = observe_file_contents(&read) else {
-            panic!("expected FileContents sighting");
+        let Payload::FileContents { contents } = observe_file_contents(&read) else {
+            panic!("expected FileContents payload");
         };
 
         assert!(
@@ -87,8 +87,8 @@ mod tests {
         // Invalid UTF-8 sequence.
         fs::write(&binary_path, [0xFF, 0xFE, 0x00, 0x01, 0x80]).unwrap();
 
-        let Sighting::FileContents { contents } = observe_file_contents(&[binary_path]) else {
-            panic!("expected FileContents sighting");
+        let Payload::FileContents { contents } = observe_file_contents(&[binary_path]) else {
+            panic!("expected FileContents payload");
         };
 
         assert_eq!(contents.len(), 1);
@@ -100,10 +100,10 @@ mod tests {
 
     #[test]
     fn read_nonexistent_file_returns_error() {
-        let Sighting::FileContents { contents } =
+        let Payload::FileContents { contents } =
             observe_file_contents(&[PathBuf::from("/nonexistent/file.txt")])
         else {
-            panic!("expected FileContents sighting");
+            panic!("expected FileContents payload");
         };
 
         assert_eq!(contents.len(), 1);
@@ -117,10 +117,9 @@ mod tests {
         fs::write(&path, "secret").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
 
-        let Sighting::FileContents { contents } =
-            observe_file_contents(std::slice::from_ref(&path))
+        let Payload::FileContents { contents } = observe_file_contents(std::slice::from_ref(&path))
         else {
-            panic!("expected FileContents sighting");
+            panic!("expected FileContents payload");
         };
 
         assert!(matches!(&contents[0].content, FileContent::Error { .. }));
@@ -143,8 +142,8 @@ mod tests {
             dir.path().join("sub/c.txt"),
         ];
 
-        let Sighting::FileContents { contents } = observe_file_contents(&read) else {
-            panic!("expected FileContents sighting");
+        let Payload::FileContents { contents } = observe_file_contents(&read) else {
+            panic!("expected FileContents payload");
         };
 
         assert_eq!(contents.len(), 3);
@@ -155,9 +154,9 @@ mod tests {
 
     #[test]
     fn read_empty_paths() {
-        let Sighting::FileContents { contents } = observe_file_contents(&Vec::<PathBuf>::new())
+        let Payload::FileContents { contents } = observe_file_contents(&Vec::<PathBuf>::new())
         else {
-            panic!("expected FileContents sighting");
+            panic!("expected FileContents payload");
         };
 
         assert!(contents.is_empty());
@@ -166,15 +165,15 @@ mod tests {
     // ── Dispatch test ──
 
     #[test]
-    fn observe_dispatches_file_contents_mark() {
+    fn observe_dispatches_file_contents_target() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("test.txt"), "hello").unwrap();
 
-        let mark = crate::model::Mark::FileContents {
+        let target = crate::model::Observe::FileContents {
             paths: vec![dir.path().join("test.txt")],
         };
 
-        let sighting = crate::observe::observe(&mark, None);
-        assert!(matches!(sighting, Sighting::FileContents { .. }));
+        let payload = crate::observe::observe(&target, None);
+        assert!(matches!(payload, Payload::FileContents { .. }));
     }
 }
