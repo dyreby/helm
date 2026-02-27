@@ -193,11 +193,12 @@ pub fn run(storage: &Storage) -> Result<(), String> {
         Command::Observe {
             voyage,
             identity,
-            ref target,
+            target,
             out,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
-            observe::cmd_observe(storage, &voyage, identity.as_deref(), target, out)
+            // Identity is resolved lazily inside cmd_observe — local targets don't require it.
+            observe::cmd_observe(storage, &voyage, identity.as_deref(), &target, out)
         }
         Command::Steer {
             voyage,

@@ -4,7 +4,7 @@
 //! Rather than requiring `--as` on every invocation, identity is resolved through a chain:
 //!
 //! 1. `--as <identity>` — explicit per-command override
-//! 2. `HELM_IDENTITY` env var — process/session level (set once per agent)
+//! 2. `HELM_IDENTITY` env var — process/session level
 //! 3. `~/.helm/config.toml` — global default for single-identity users
 //!
 //! A resolved identity is a plain string that drives two things simultaneously:
@@ -20,7 +20,7 @@ struct Config {
 }
 
 /// Error message shown when identity cannot be resolved.
-pub const IDENTITY_REQUIRED: &str = "identity required: pass --as <identity>, \
+pub(crate) const IDENTITY_REQUIRED: &str = "identity required: pass --as <identity>, \
     set HELM_IDENTITY, or add `identity = \"...\"` to ~/.helm/config.toml";
 
 /// Resolve the acting identity from the tiered resolution chain.
