@@ -18,8 +18,6 @@ use super::{Result, Storage, StorageError};
 
 impl Storage {
     /// Appends an observation to the voyage's working set.
-    // TODO: remove once observe (#99) is wired to the working set.
-    #[allow(dead_code)]
     pub fn append_working(&self, voyage_id: Uuid, observation: &Observation) -> Result<()> {
         let dir = self.voyage_dir(voyage_id);
         if !dir.exists() {
