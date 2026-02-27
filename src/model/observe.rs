@@ -51,9 +51,13 @@ pub enum Observe {
 impl Observe {
     /// Returns `true` if this observation requires GitHub credentials.
     pub fn needs_gh(&self) -> bool {
-        matches!(
-            self,
-            Self::GitHubIssue { .. } | Self::GitHubPullRequest { .. } | Self::GitHubRepository
-        )
+        match self {
+            Self::FileContents { .. } | Self::DirectoryTree { .. } | Self::RustProject { .. } => {
+                false
+            }
+            Self::GitHubIssue { .. } | Self::GitHubPullRequest { .. } | Self::GitHubRepository => {
+                true
+            }
+        }
     }
 }
