@@ -26,9 +26,8 @@ pub use voyage::{Voyage, VoyageStatus};
 
 /// A single entry in the logbook.
 ///
-/// Identity is recorded per entry — multiple agents or people can steer the
-/// same voyage. Role and method capture the cognitive framing and execution
-/// engine used at the time.
+/// Identity is recorded per entry — multiple agents or people can steer the same voyage.
+/// Role and method capture the cognitive framing and execution engine used at the time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogbookEntry {
@@ -41,7 +40,7 @@ pub struct LogbookEntry {
     /// What cognitive framing was adopted (e.g. `"reviewer"`, `"coder"`).
     pub role: String,
 
-    /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `"human"`).
+    /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `"conversation"`).
     pub method: String,
 
     /// When this entry was recorded.

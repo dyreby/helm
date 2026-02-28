@@ -1,5 +1,7 @@
 //! Voyage storage: create, load, update, and list voyages.
 
+use std::{fs, io};
+
 use jiff::Timestamp;
 use uuid::Uuid;
 
@@ -16,7 +18,6 @@ impl Storage {
         }
         let conn = rusqlite::Connection::open(&path)?;
         conn.execute_batch(SCHEMA_DDL)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
         let (status, ended_at, ended_status) = encode_status(&voyage.status);
         conn.execute(
@@ -66,9 +67,9 @@ impl Storage {
     ///
     /// Old JSONL voyage directories are ignored.
     pub fn list_voyages(&self) -> Result<Vec<Voyage>> {
-        let entries = match std::fs::read_dir(&self.root) {
+        let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(e) => return Err(e.into()),
         };
 

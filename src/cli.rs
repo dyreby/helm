@@ -43,7 +43,7 @@ const WORKFLOW_HELP: &str = r#"Workflow: advancing an issue
   1. helm voyage new "Resolve #42: fix widget crash"
      → prints a voyage ID (e.g. a3b0fc12)
   2. helm observe --voyage a3b --as dyreby github-issue 42
-  3. helm steer --voyage a3b --as dyreby --role coder --method "human" --summary "Plan looks good" comment --issue 42 --body "Here's my plan: ..."
+  3. helm steer --voyage a3b --as john-agent --role coder --method "claude-opus-4, thinking high" --summary "Plan looks good" comment --issue 42 --body "Here's my plan: ..."
   4. helm voyage end --voyage a3b --status "Merged PR #45"
 
 Identity (--as):
@@ -113,7 +113,7 @@ pub enum Command {
         #[arg(long)]
         role: String,
 
-        /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `human`).
+        /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `"conversation"`).
         #[arg(long)]
         method: String,
 
@@ -144,7 +144,7 @@ pub enum Command {
         #[arg(long)]
         role: String,
 
-        /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `human`).
+        /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `"conversation"`).
         #[arg(long)]
         method: String,
 

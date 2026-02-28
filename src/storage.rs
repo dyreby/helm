@@ -9,7 +9,7 @@
 //! The schema is initialised on `create_voyage` and versioned via
 //! `PRAGMA user_version`. Connections always enable foreign key enforcement.
 
-use std::{fmt::Write as _, io, path::PathBuf};
+use std::{fmt::Write as _, fs, io, path::PathBuf};
 
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
@@ -114,7 +114,7 @@ impl Storage {
     /// The directory is created if it doesn't exist.
     pub fn new(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
-        std::fs::create_dir_all(&root)?;
+        fs::create_dir_all(&root)?;
         Ok(Self { root })
     }
 
