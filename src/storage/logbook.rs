@@ -62,8 +62,7 @@ impl Storage {
 
         let rows: Vec<(i64, String, String, String, String, String, String)> = {
             let mut stmt = conn.prepare(
-                "SELECT id, recorded_at, identity, action, summary,
-                        COALESCE(role, ''), COALESCE(method, '')
+                "SELECT id, recorded_at, identity, action, summary, role, method
                  FROM logbook
                  ORDER BY id",
             )?;

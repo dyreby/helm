@@ -64,8 +64,8 @@ CREATE TABLE logbook (
     identity    TEXT NOT NULL,
     action      TEXT NOT NULL,
     summary     TEXT NOT NULL,
-    role        TEXT,
-    method      TEXT
+    role        TEXT NOT NULL,
+    method      TEXT NOT NULL
 );
 
 CREATE TABLE bearing_observations (
