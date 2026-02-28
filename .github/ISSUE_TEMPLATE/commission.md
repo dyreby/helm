@@ -14,7 +14,7 @@ labels: ["commission"]
 
 ## Missions
 
-<!-- Ordered checklist of issues. Each mission is one issue with its own PR — complete them in order. -->
+<!-- Missions that serve this commission, in suggested order. Each is an issue, closed by a PR or split into smaller issues as work unfolds. -->
 
 - [ ] #
 
