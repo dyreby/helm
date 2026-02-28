@@ -155,6 +155,21 @@ impl Storage {
         }
 
         tx.execute("DELETE FROM slate", [])?;
+
+        // Prune artifacts no longer referenced by any slate row or sealed bearing.
+        // Orphans accumulate when the same target is re-observed (INSERT OR REPLACE
+        // on slate replaces the row but leaves the old artifact in place).
+        // Cleaning up here — inside the seal transaction — catches them at the
+        // natural boundary without adding cost to every observe.
+        tx.execute(
+            "DELETE FROM artifacts WHERE hash NOT IN (
+                 SELECT artifact_hash FROM slate
+                 UNION
+                 SELECT artifact_hash FROM bearing_observations
+             )",
+            [],
+        )?;
+
         tx.commit()?;
 
         Ok(())
@@ -367,6 +382,60 @@ mod tests {
         assert_eq!(entries[1].identity, "bob");
         // Slate was empty at the time of the log entry.
         assert_eq!(entries[1].bearing.observations.len(), 0);
+    }
+
+    #[test]
+    fn seal_prunes_orphaned_artifacts() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        // Observe a target, then re-observe it with a different payload.
+        // The first artifact becomes orphaned when the slate row is replaced.
+        let target = Observe::GitHubIssue { number: 1 };
+        let obs1 = crate::model::Observation {
+            target: target.clone(),
+            payload: Payload::DirectoryTree {
+                listings: vec![DirectoryListing {
+                    path: PathBuf::from("a/"),
+                    entries: vec![],
+                }],
+            },
+            observed_at: Timestamp::now(),
+        };
+        let obs2 = crate::model::Observation {
+            target,
+            payload: Payload::DirectoryTree {
+                listings: vec![DirectoryListing {
+                    path: PathBuf::from("b/"),
+                    entries: vec![],
+                }],
+            },
+            observed_at: Timestamp::now(),
+        };
+
+        storage.observe(voyage.id, &obs1).unwrap();
+        storage.observe(voyage.id, &obs2).unwrap();
+
+        // Two artifacts exist (different payloads), but only one is referenced by the slate.
+        let conn = storage.open_voyage(voyage.id).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM artifacts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+        drop(conn);
+
+        // Seal — the orphaned artifact should be pruned.
+        storage
+            .record_log(voyage.id, "done", "summary", "alice", "coder", "human")
+            .unwrap();
+
+        let conn = storage.open_voyage(voyage.id).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM artifacts", [], |r| r.get(0))
+            .unwrap();
+        // One artifact remains — the one referenced by bearing_observations.
+        assert_eq!(count, 1);
     }
 
     #[test]
