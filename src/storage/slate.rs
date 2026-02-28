@@ -1,74 +1,112 @@
 //! Slate storage: observations accumulating between steer/log commands.
 //!
-//! Observations are appended to `slate.jsonl` as they arrive.
-//! When steer or log is called, the slate is loaded, sealed into a
-//! bearing, and then cleared. The file is removed on clear — a missing file
-//! is a valid empty slate.
-
-use std::{fs, io};
-
-// Traits must be in scope for `.lines()` on `BufReader` and `.write_all()` on `File`.
-use io::{BufRead, Write};
+//! The slate is a set keyed by observation target — `INSERT OR REPLACE`
+//! enforces one observation per target at write time.
+//! Payloads are stored as compressed, content-addressed artifacts.
 
 use uuid::Uuid;
 
-use crate::model::Observation;
+use crate::model::{Observation, Observe};
 
-use super::{Result, Storage, StorageError};
+use super::{Result, Storage, load_artifact, store_artifact};
 
 impl Storage {
-    /// Appends an observation to the voyage's slate.
-    pub fn append_slate(&self, voyage_id: Uuid, observation: &Observation) -> Result<()> {
-        let dir = self.voyage_dir(voyage_id);
-        if !dir.exists() {
-            return Err(StorageError::VoyageNotFound(voyage_id));
-        }
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("slate.jsonl"))?;
-        let mut line = serde_json::to_string(observation)?;
-        line.push('\n');
-        file.write_all(line.as_bytes())?;
+    /// Add an observation to the slate for a voyage.
+    ///
+    /// The payload is stored as a content-addressed artifact.
+    /// If the same target was observed before, this replaces the previous entry.
+    pub fn observe(&self, voyage_id: Uuid, observation: &Observation) -> Result<()> {
+        let conn = self.open_voyage(voyage_id)?;
+
+        let artifact_hash = store_artifact(&conn, &observation.payload)?;
+        let target_json = serde_json::to_string(&observation.target)?;
+        let observed_at = observation.observed_at.to_string();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO slate (target, artifact_hash, observed_at)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![target_json, artifact_hash, observed_at],
+        )?;
+
         Ok(())
     }
 
-    /// Loads all observations from the voyage's slate.
-    ///
-    /// Returns an empty vec if the slate file doesn't exist.
+    /// Load all observations currently on the slate for a voyage.
     pub fn load_slate(&self, voyage_id: Uuid) -> Result<Vec<Observation>> {
-        let path = self.voyage_dir(voyage_id).join("slate.jsonl");
-        if !path.exists() {
-            let dir = self.voyage_dir(voyage_id);
-            if !dir.exists() {
-                return Err(StorageError::VoyageNotFound(voyage_id));
-            }
-            return Ok(Vec::new());
-        }
-        let file = fs::File::open(path)?;
-        let reader = io::BufReader::new(file);
-        let mut observations = Vec::new();
-        for line in reader.lines() {
-            let line = line?;
-            if !line.is_empty() {
-                observations.push(serde_json::from_str(&line)?);
-            }
-        }
-        Ok(observations)
+        let conn = self.open_voyage(voyage_id)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT s.target, s.observed_at, s.artifact_hash
+             FROM slate s
+             ORDER BY rowid",
+        )?;
+
+        let observations = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .map(|r| {
+                let (target_json, observed_at_str, hash) = r?;
+
+                let target: Observe = serde_json::from_str(&target_json).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+
+                let observed_at = observed_at_str.parse().map_err(|e: jiff::Error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        1,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+
+                Ok((target, observed_at, hash))
+            })
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        observations
+            .into_iter()
+            .map(|(target, observed_at, hash)| {
+                let payload = load_artifact(&conn, &hash)?;
+                Ok(Observation {
+                    target,
+                    payload,
+                    observed_at,
+                })
+            })
+            .collect()
     }
 
-    /// Clears the voyage's slate by removing `slate.jsonl`.
+    /// Erase a specific target from the slate.
     ///
-    /// Idempotent: does nothing if the file doesn't exist.
+    /// Idempotent: does nothing if the target is not on the slate.
+    // TODO(#128): remove once `helm slate erase` is wired to the CLI.
+    #[allow(dead_code)]
+    pub fn erase_from_slate(&self, voyage_id: Uuid, target: &Observe) -> Result<()> {
+        let conn = self.open_voyage(voyage_id)?;
+        let target_json = serde_json::to_string(target)?;
+        conn.execute(
+            "DELETE FROM slate WHERE target = ?1",
+            rusqlite::params![target_json],
+        )?;
+        Ok(())
+    }
+
+    /// Clear the entire slate without sealing.
+    ///
+    /// Wipes all observations without creating a logbook entry.
+    /// Idempotent: safe to call on an already-empty slate.
     pub fn clear_slate(&self, voyage_id: Uuid) -> Result<()> {
-        let dir = self.voyage_dir(voyage_id);
-        if !dir.exists() {
-            return Err(StorageError::VoyageNotFound(voyage_id));
-        }
-        let path = dir.join("slate.jsonl");
-        if path.exists() {
-            fs::remove_file(path)?;
-        }
+        let conn = self.open_voyage(voyage_id)?;
+        conn.execute("DELETE FROM slate", [])?;
         Ok(())
     }
 }
@@ -82,7 +120,10 @@ mod tests {
     use jiff::Timestamp;
     use tempfile::TempDir;
 
-    use crate::model::*;
+    use crate::{
+        model::{DirectoryEntry, DirectoryListing, Payload, Voyage, VoyageStatus},
+        storage::StorageError,
+    };
 
     fn test_storage() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();
@@ -99,13 +140,9 @@ mod tests {
         }
     }
 
-    fn sample_observation() -> Observation {
+    fn sample_observation(target: Observe) -> Observation {
         Observation {
-            target: Observe::DirectoryTree {
-                root: PathBuf::from("src/"),
-                skip: vec![],
-                max_depth: None,
-            },
+            target,
             payload: Payload::DirectoryTree {
                 listings: vec![DirectoryListing {
                     path: PathBuf::from("src/"),
@@ -121,22 +158,42 @@ mod tests {
     }
 
     #[test]
-    fn append_and_load_slate() {
+    fn observe_and_load_slate() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
-        let obs = sample_observation();
-        storage.append_slate(voyage.id, &obs).unwrap();
-        storage.append_slate(voyage.id, &obs).unwrap();
+        let obs = sample_observation(Observe::GitHubIssue { number: 1 });
+        storage.observe(voyage.id, &obs).unwrap();
 
         let loaded = storage.load_slate(voyage.id).unwrap();
-        assert_eq!(loaded.len(), 2);
-        assert!(matches!(loaded[0].target, Observe::DirectoryTree { .. }));
+        assert_eq!(loaded.len(), 1);
+        assert!(matches!(
+            loaded[0].target,
+            Observe::GitHubIssue { number: 1 }
+        ));
     }
 
     #[test]
-    fn load_slate_empty_when_no_file() {
+    fn observe_same_target_replaces() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        let target = Observe::GitHubIssue { number: 42 };
+        let obs1 = sample_observation(target.clone());
+        let obs2 = sample_observation(target);
+
+        storage.observe(voyage.id, &obs1).unwrap();
+        storage.observe(voyage.id, &obs2).unwrap();
+
+        // Same target observed twice — slate still has one entry.
+        let loaded = storage.load_slate(voyage.id).unwrap();
+        assert_eq!(loaded.len(), 1);
+    }
+
+    #[test]
+    fn load_slate_empty() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
@@ -146,24 +203,61 @@ mod tests {
     }
 
     #[test]
-    fn clear_slate_removes_file() {
-        let (dir, storage) = test_storage();
+    fn erase_from_slate_removes_target() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        let target1 = Observe::GitHubIssue { number: 1 };
+        let target2 = Observe::GitHubIssue { number: 2 };
+
+        storage
+            .observe(voyage.id, &sample_observation(target1.clone()))
+            .unwrap();
+        storage
+            .observe(voyage.id, &sample_observation(target2))
+            .unwrap();
+        storage.erase_from_slate(voyage.id, &target1).unwrap();
+
+        let loaded = storage.load_slate(voyage.id).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(matches!(
+            loaded[0].target,
+            Observe::GitHubIssue { number: 2 }
+        ));
+    }
+
+    #[test]
+    fn erase_from_slate_idempotent() {
+        let (_dir, storage) = test_storage();
+        let voyage = sample_voyage();
+        storage.create_voyage(&voyage).unwrap();
+
+        let target = Observe::GitHubIssue { number: 99 };
+        // Erase a target that was never observed — should not error.
+        storage.erase_from_slate(voyage.id, &target).unwrap();
+    }
+
+    #[test]
+    fn clear_slate_removes_all() {
+        let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
         storage
-            .append_slate(voyage.id, &sample_observation())
+            .observe(
+                voyage.id,
+                &sample_observation(Observe::GitHubIssue { number: 1 }),
+            )
+            .unwrap();
+        storage
+            .observe(
+                voyage.id,
+                &sample_observation(Observe::GitHubIssue { number: 2 }),
+            )
             .unwrap();
         storage.clear_slate(voyage.id).unwrap();
 
-        let slate_path = dir
-            .path()
-            .join("voyages")
-            .join(voyage.id.to_string())
-            .join("slate.jsonl");
-        assert!(!slate_path.exists());
-
-        // Load after clear returns empty.
         let loaded = storage.load_slate(voyage.id).unwrap();
         assert!(loaded.is_empty());
     }
@@ -174,16 +268,15 @@ mod tests {
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
-        // Clear with no file — should not error.
+        // Clear with nothing on the slate — should not error.
         storage.clear_slate(voyage.id).unwrap();
     }
 
     #[test]
-    fn append_slate_nonexistent_voyage_fails() {
+    fn observe_nonexistent_voyage_fails() {
         let (_dir, storage) = test_storage();
-        let err = storage
-            .append_slate(Uuid::new_v4(), &sample_observation())
-            .unwrap_err();
+        let obs = sample_observation(Observe::GitHubIssue { number: 1 });
+        let err = storage.observe(Uuid::new_v4(), &obs).unwrap_err();
         assert!(matches!(err, StorageError::VoyageNotFound(_)));
     }
 

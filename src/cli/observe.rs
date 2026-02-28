@@ -56,7 +56,7 @@ pub(super) fn cmd_observe(
         .map_err(|e| format!("failed to serialize observation: {e}"))?;
 
     storage
-        .append_slate(voyage.id, &observation)
+        .observe(voyage.id, &observation)
         .map_err(|e| format!("failed to append to slate: {e}"))?;
 
     match out {

@@ -12,7 +12,7 @@ pub struct Observation {
     /// What was looked at.
     pub target: Observe,
 
-    /// What came back — inline if small, hold reference if large.
+    /// What came back.
     pub payload: Payload,
 
     /// When the observation was made.

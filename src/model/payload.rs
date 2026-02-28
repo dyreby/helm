@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// What came back from an observation.
 ///
-/// Small payloads stay inline in the observation record.
-/// Large payloads are stored in the hold and referenced by content hash.
+/// Stored as a content-addressed artifact in the voyage database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Payload {
