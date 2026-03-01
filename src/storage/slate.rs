@@ -88,8 +88,6 @@ impl Storage {
     /// Erase a specific target from the slate.
     ///
     /// Idempotent: does nothing if the target is not on the slate.
-    // TODO(#128): remove once `helm slate erase` is wired to the CLI.
-    #[allow(dead_code)]
     pub fn erase_from_slate(&self, voyage_id: Uuid, target: &Observe) -> Result<()> {
         let conn = self.open_voyage(voyage_id)?;
         let target_json = serde_json::to_string(target)?;
