@@ -64,8 +64,6 @@ impl Storage {
     }
 
     /// Lists all voyages by scanning the storage root for `*.sqlite` files.
-    ///
-    /// Old JSONL voyage directories are ignored.
     pub fn list_voyages(&self) -> Result<Vec<Voyage>> {
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
