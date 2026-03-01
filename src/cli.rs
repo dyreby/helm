@@ -203,6 +203,10 @@ pub fn run(storage: &Storage) -> Result<(), String> {
                 let voyage = resolve_voyage(storage, &voyage)?;
                 slate::cmd_clear(storage, &voyage)
             }
+            SlateCommand::Erase { voyage, target } => {
+                let voyage = resolve_voyage(storage, &voyage)?;
+                slate::cmd_erase(storage, &voyage, &target)
+            }
         },
         Command::Observe {
             voyage,

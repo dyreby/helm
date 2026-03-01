@@ -87,17 +87,15 @@ impl Storage {
 
     /// Erase a specific target from the slate.
     ///
-    /// Idempotent: does nothing if the target is not on the slate.
-    // TODO(#128): remove once `helm slate erase` is wired to the CLI.
-    #[allow(dead_code)]
-    pub fn erase_from_slate(&self, voyage_id: Uuid, target: &Observe) -> Result<()> {
+    /// Returns `true` if the target was present and erased, `false` if it was not on the slate.
+    pub fn erase_from_slate(&self, voyage_id: Uuid, target: &Observe) -> Result<bool> {
         let conn = self.open_voyage(voyage_id)?;
         let target_json = serde_json::to_string(target)?;
-        conn.execute(
+        let rows = conn.execute(
             "DELETE FROM slate WHERE target = ?1",
             rusqlite::params![target_json],
         )?;
-        Ok(())
+        Ok(rows > 0)
     }
 
     /// Clear the entire slate without sealing.
@@ -217,7 +215,9 @@ mod tests {
         storage
             .observe(voyage.id, &sample_observation(target2))
             .unwrap();
-        storage.erase_from_slate(voyage.id, &target1).unwrap();
+
+        let erased = storage.erase_from_slate(voyage.id, &target1).unwrap();
+        assert!(erased);
 
         let loaded = storage.load_slate(voyage.id).unwrap();
         assert_eq!(loaded.len(), 1);
@@ -228,14 +228,14 @@ mod tests {
     }
 
     #[test]
-    fn erase_from_slate_idempotent() {
+    fn erase_from_slate_returns_false_when_not_present() {
         let (_dir, storage) = test_storage();
         let voyage = sample_voyage();
         storage.create_voyage(&voyage).unwrap();
 
         let target = Observe::GitHubIssue { number: 99 };
-        // Erase a target that was never observed — should not error.
-        storage.erase_from_slate(voyage.id, &target).unwrap();
+        let erased = storage.erase_from_slate(voyage.id, &target).unwrap();
+        assert!(!erased);
     }
 
     #[test]
