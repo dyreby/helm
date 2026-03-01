@@ -34,7 +34,7 @@ pub enum SlateCommand {
     /// Erase a single observation from the slate.
     ///
     /// Removes the observation for the given target.
-    /// Idempotent: does nothing if the target is not on the slate.
+    /// Exits non-zero if the target is not on the slate.
     Erase {
         /// Voyage ID: full UUID or unambiguous prefix (e.g. `a3b`).
         #[arg(long)]
@@ -53,11 +53,14 @@ pub(super) fn cmd_erase(
     let observe = observe_from_target(target)?;
     let description = describe_target(target);
 
-    storage
+    let erased = storage
         .erase_from_slate(voyage.id, &observe)
         .map_err(|e| format!("failed to erase from slate: {e}"))?;
 
-    eprintln!("Erased: {description}");
+    if !erased {
+        return Err(format!("{description} is not on the slate"));
+    }
+
     Ok(())
 }
 
@@ -121,7 +124,5 @@ pub(super) fn cmd_clear(storage: &Storage, voyage: &Voyage) -> Result<(), String
     storage
         .clear_slate(voyage.id)
         .map_err(|e| format!("failed to clear slate: {e}"))?;
-
-    eprintln!("Slate cleared");
     Ok(())
 }
