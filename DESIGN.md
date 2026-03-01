@@ -17,7 +17,7 @@ The nautical metaphor is load-bearing. These terms are used consistently across 
 | **Observation** | What you looked at (`Observe` variant) + what came back (payload) + timestamp |
 | **Bearing** | Sealed observations + summary. Recorded in each log entry on steer/log |
 | **Slate** | Observations accumulating between steer/log commands |
-| **The hold** | Per-voyage content-addressed storage for large payloads |
+| **Artifact** | Content-addressed, zstd-compressed payload. Stored once per voyage database; referenced by hash from slate and sealed bearings |
 
 ### Commands
 
@@ -48,7 +48,7 @@ Gather observations into the slate. Never writes to the logbook. Cheap, frequent
 An observation has three parts:
 
 - **target** — what you looked at (`Observe` variant)
-- **payload** — what came back (inline if small, hold reference if large)
+- **payload** — what came back (stored as a content-addressed artifact)
 - **timestamp** — when the observation was made
 
 The `Observe` enum is the extension surface for new observation types. Add a variant to teach helm to look at something new.
@@ -103,27 +103,11 @@ GitHub is the current collaborative boundary. The model supports other boundarie
 
 Observations accumulate in the slate between steer/log commands. When either is called, helm seals the slate into a bearing:
 
-- Deduplicate by target (keep the newest observation when the same thing was observed multiple times)
-- Keep everything since last steer/log
-- Cap by count/size; spill large payloads to the hold
-- Seal into the log entry's bearing
-- Clear the slate
+- Deduplication is enforced at write time — `INSERT OR REPLACE` on the slate means the same target observed twice leaves one entry, the newest payload wins.
+- Seal copies the slate into `bearing_observations` and clears it, atomically in one transaction.
+- No manual step. The invariant: any command that writes to the logbook seals and clears.
 
-No manual step. The invariant: any command that writes to the logbook seals and clears.
-
-## The Hold
-
-Per-voyage content-addressed storage for large payloads.
-
-```
-voyage/<id>/hold/<sha256>.zst
-```
-
-- Small payloads stay inline in observation records.
-- Large payloads get compressed and stored in the hold, referenced by hash.
-- Free deduplication within a voyage — same content, same hash, stored once.
-- Not cleared when the slate clears.
-- Garbage collection of unused hold entries (payloads not referenced by any sealed bearing) can be added later.
+All payloads are stored as content-addressed artifacts — zstd-compressed and keyed by SHA-256 hash of the uncompressed JSON. The same payload observed twice stores one artifact. Deduplication is free.
 
 ## Example Flow: Advancing an Issue
 
@@ -234,7 +218,7 @@ struct Observation {
     /// What was looked at.
     target: Observe,
 
-    /// What came back — inline if small, hold reference if large.
+    /// What came back — stored as a content-addressed artifact.
     payload: Payload,
 
     /// When the observation was made.
@@ -305,20 +289,24 @@ enum VoyageStatus {
 
 ## Storage
 
+One `SQLite` file per voyage:
+
 ```
 ~/.helm/
   voyages/
-    <uuid>/
-      voyage.json
-      logbook.jsonl
-      slate.jsonl
-      hold/
-        <sha256>.zst
+    <uuid>.sqlite
 ```
 
-- **logbook.jsonl** — append-only log entries, written by steer and log.
-- **slate.jsonl** — observations since last steer/log. Cleared on seal.
-- **hold/** — compressed large payloads, content-addressed by hash.
+The schema is versioned via `PRAGMA user_version`. Each voyage database has six tables:
+
+- **`voyage`** — voyage metadata (id, intent, created\_at, status).
+- **`artifacts`** — zstd-compressed payloads keyed by SHA-256 hash.
+- **`artifact_derivations`** — links a reduced artifact to its summary (for future `helm artifact reduce`).
+- **`slate`** — current observations, keyed by target. Set semantics enforced by the database.
+- **`logbook`** — one row per steer or log entry, with identity, role, method, summary, and action.
+- **`bearing_observations`** — the slate snapshot at the time of each logbook entry.
+
+Foreign key enforcement (`PRAGMA foreign_keys = ON`) is set on every connection.
 
 ## CLI
 
@@ -340,4 +328,3 @@ Identity is required explicitly via `--as` on every `steer` and `log` invocation
 These are implementation questions that don't affect the design decisions captured in [ADR 001](docs/adr/001-observe-steer-log.md).
 
 - **Bearing summary**: who writes it? Always the caller? Auto-generated? Optional?
-- **Payload threshold**: at what size do payloads spill to the hold?

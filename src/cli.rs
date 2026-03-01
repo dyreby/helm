@@ -18,12 +18,11 @@ mod voyage;
 use std::path::PathBuf;
 
 use clap::{ArgGroup, Parser, Subcommand};
-use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{
-    bearing, identity,
-    model::{CommentTarget, EntryKind, LogbookEntry, Steer, Voyage},
+    identity,
+    model::{CommentTarget, Steer, Voyage},
     steer,
     storage::Storage,
 };
@@ -44,7 +43,7 @@ const WORKFLOW_HELP: &str = r#"Workflow: advancing an issue
   1. helm voyage new "Resolve #42: fix widget crash"
      → prints a voyage ID (e.g. a3b0fc12)
   2. helm observe --voyage a3b --as dyreby github-issue 42
-  3. helm steer --voyage a3b --as dyreby --summary "Plan looks good" comment --issue 42 --body "Here's my plan: ..."
+  3. helm steer --voyage a3b --as john-agent --role coder --method "claude-opus-4, thinking high" --summary "Plan looks good" comment --issue 42 --body "Here's my plan: ..."
   4. helm voyage end --voyage a3b --status "Merged PR #45"
 
 Identity (--as):
@@ -110,6 +109,14 @@ pub enum Command {
         #[arg(long = "as")]
         identity: Option<String>,
 
+        /// Cognitive framing adopted while steering (e.g. `coder`, `reviewer`).
+        #[arg(long)]
+        role: String,
+
+        /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `"conversation"`).
+        #[arg(long)]
+        method: String,
+
         /// Why you're steering — orientation for the logbook entry.
         #[arg(long)]
         summary: String,
@@ -132,6 +139,14 @@ pub enum Command {
         /// Falls back to `HELM_IDENTITY` env var, then `~/.helm/config.toml`.
         #[arg(long = "as")]
         identity: Option<String>,
+
+        /// Cognitive framing adopted while logging (e.g. `reviewer`, `planner`).
+        #[arg(long)]
+        role: String,
+
+        /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `"conversation"`).
+        #[arg(long)]
+        method: String,
 
         /// Why you're logging — orientation for the logbook entry.
         #[arg(long)]
@@ -202,22 +217,30 @@ pub fn run(storage: &Storage) -> Result<(), String> {
         Command::Steer {
             voyage,
             identity,
+            role,
+            method,
             summary,
             action,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
             let identity = identity::resolve_identity(identity.as_deref())?;
-            cmd_steer(storage, &voyage, &identity, &summary, &action)
+            cmd_steer(
+                storage, &voyage, &identity, &role, &method, &summary, &action,
+            )
         }
         Command::Log {
             voyage,
             identity,
+            role,
+            method,
             summary,
             status,
         } => {
             let voyage = resolve_voyage(storage, &voyage)?;
             let identity = identity::resolve_identity(identity.as_deref())?;
-            cmd_log(storage, &voyage, &identity, &summary, &status)
+            cmd_log(
+                storage, &voyage, &identity, &role, &method, &summary, &status,
+            )
         }
     }
 }
@@ -226,6 +249,8 @@ fn cmd_steer(
     storage: &Storage,
     voyage: &Voyage,
     identity: &str,
+    role: &str,
+    method: &str,
     summary: &str,
     action: &SteerAction,
 ) -> Result<(), String> {
@@ -234,33 +259,14 @@ fn cmd_steer(
     // 1. Build the typed steer action from CLI args.
     let steer_action = build_steer_action(action);
 
-    // 2. Seal the slate into a bearing — capture what we knew going in.
-    let observations = storage
-        .load_slate(voyage.id)
-        .map_err(|e| format!("failed to load slate: {e}"))?;
-    let bearing = bearing::seal(observations, summary.to_string());
-
-    // 3. Perform the action — mutate collaborative state.
-    //    Happens after seal so a failed perform leaves the logbook untouched.
-    //    If perform succeeds but append fails, the steer is unlogged — acceptable
-    //    gap for now; true atomicity would require a WAL or similar.
+    // 2. Perform the action — mutate collaborative state.
+    //    Happens before recording so a failed action leaves the logbook untouched.
     steer::perform(&steer_action, &gh_config)?;
 
-    // 4. Record one logbook entry.
-    let entry = LogbookEntry {
-        bearing,
-        author: identity.to_string(),
-        timestamp: Timestamp::now(),
-        kind: EntryKind::Steer(steer_action),
-    };
+    // 3. Seal the slate, record one logbook entry, and clear the slate — one transaction.
     storage
-        .append_entry(voyage.id, &entry)
-        .map_err(|e| format!("failed to append logbook entry: {e}"))?;
-
-    // 5. Clear the slate.
-    storage
-        .clear_slate(voyage.id)
-        .map_err(|e| format!("failed to clear slate: {e}"))?;
+        .record_steer(voyage.id, &steer_action, summary, identity, role, method)
+        .map_err(|e| format!("failed to record steer: {e}"))?;
 
     eprintln!("Steered: {}", describe_steer_action(action));
     Ok(())
@@ -270,30 +276,15 @@ fn cmd_log(
     storage: &Storage,
     voyage: &Voyage,
     identity: &str,
+    role: &str,
+    method: &str,
     summary: &str,
     status: &str,
 ) -> Result<(), String> {
-    // 1. Seal the slate into a bearing — capture what we knew going in.
-    let observations = storage
-        .load_slate(voyage.id)
-        .map_err(|e| format!("failed to load slate: {e}"))?;
-    let bearing = bearing::seal(observations, summary.to_string());
-
-    // 2. Record one logbook entry. No collaborative state is mutated.
-    let entry = LogbookEntry {
-        bearing,
-        author: identity.to_string(),
-        timestamp: Timestamp::now(),
-        kind: EntryKind::Log(status.to_string()),
-    };
+    // Seal the slate, record one logbook entry, and clear the slate — one transaction.
     storage
-        .append_entry(voyage.id, &entry)
-        .map_err(|e| format!("failed to append logbook entry: {e}"))?;
-
-    // 3. Clear the slate.
-    storage
-        .clear_slate(voyage.id)
-        .map_err(|e| format!("failed to clear slate: {e}"))?;
+        .record_log(voyage.id, status, summary, identity, role, method)
+        .map_err(|e| format!("failed to record log entry: {e}"))?;
 
     eprintln!("Logged: {status}");
     Ok(())

@@ -24,17 +24,29 @@ pub use payload::{
 pub use steer::{CommentTarget, Steer};
 pub use voyage::{Voyage, VoyageStatus};
 
-/// A single entry in the logbook, serialized as one line of JSONL.
+/// A single entry in the logbook.
 ///
-/// Tagged enum so each line is self-describing when read back.
-/// Identity is recorded per entry — multiple agents or people can
-/// steer the same voyage.
+/// Identity is recorded per entry — multiple agents or people can steer the same voyage.
+/// Role and method capture the cognitive framing and execution engine used at the time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogbookEntry {
+    /// The observations that informed this decision, plus summary.
     pub bearing: Bearing,
-    pub author: String,
-    pub timestamp: Timestamp,
+
+    /// Who acted.
+    pub identity: String,
+
+    /// What cognitive framing was adopted (e.g. `"reviewer"`, `"coder"`).
+    pub role: String,
+
+    /// How the thinking was done (e.g. `"claude-opus-4, thinking high"`, `"conversation"`).
+    pub method: String,
+
+    /// When this entry was recorded.
+    pub recorded_at: Timestamp,
+
+    /// What happened.
     pub kind: EntryKind,
 }
 

@@ -68,8 +68,8 @@ CREATE TABLE logbook (
     identity    TEXT NOT NULL,
     action      TEXT NOT NULL,  -- JSON-serialized EntryKind
     summary     TEXT NOT NULL,
-    role        TEXT,           -- cognitive framing: 'reviewer', 'coder', 'planner', etc.
-    method      TEXT            -- how thinking was done: 'sonnet 4-6, thinking high', 'human', 'pair session', etc.
+    role        TEXT NOT NULL,   -- cognitive framing: 'reviewer', 'coder', 'planner', etc.
+    method      TEXT NOT NULL   -- how thinking was done: 'sonnet 4-6, thinking high', 'human', 'pair session', etc.
 );
 
 CREATE TABLE bearing_observations (
@@ -94,7 +94,7 @@ CREATE TABLE bearing_observations (
 
 **Foreign key enforcement.** `PRAGMA foreign_keys = ON` is set on every connection. SQLite does not enforce foreign key constraints by default. The constraints on `slate.artifact_hash`, `bearing_observations.artifact_hash`, `bearing_observations.logbook_id`, and `artifact_derivations` are load-bearing for data integrity.
 
-**Provenance on log entries.** Each logbook entry records `identity` (who acted, required), and optionally `role` (what cognitive framing was adopted) and `method` (how the thinking was done). These three axes are orthogonal: identity is the external actor, role is the mindset, method is the engine. All are freeform text. All apply equally to humans and agents.
+**Provenance on log entries.** Each logbook entry records `identity` (who acted), `role` (what cognitive framing was adopted), and `method` (how the thinking was done). All three are required. These axes are orthogonal: identity is the external actor, role is the mindset, method is the engine. All are freeform text. All apply equally to humans and agents.
 
 **Schema versioning from day one.** `PRAGMA user_version = 1` is set on creation. Migrations are added when needed — not before.
 

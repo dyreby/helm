@@ -2,65 +2,169 @@
 
 use std::{fs, io};
 
+use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::model::Voyage;
+use crate::model::{Voyage, VoyageStatus};
 
-use super::{Result, Storage, StorageError};
+use super::{Result, SCHEMA_DDL, Storage, StorageError};
 
 impl Storage {
-    /// Creates a new voyage, writing its metadata to disk.
+    /// Creates a new voyage, initialising a fresh `SQLite` database for it.
     pub fn create_voyage(&self, voyage: &Voyage) -> Result<()> {
-        let dir = self.voyage_dir(voyage.id);
-        if dir.exists() {
+        let path = self.voyage_path(voyage.id);
+        if path.exists() {
             return Err(StorageError::VoyageAlreadyExists(voyage.id));
         }
-        fs::create_dir_all(&dir)?;
-        let json = serde_json::to_string_pretty(voyage)?;
-        fs::write(dir.join("voyage.json"), json)?;
+        let conn = rusqlite::Connection::open(&path)?;
+        conn.execute_batch(SCHEMA_DDL)?;
+
+        let (status, ended_at, ended_status) = encode_status(&voyage.status);
+        conn.execute(
+            "INSERT INTO voyage (id, intent, created_at, status, ended_at, ended_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                voyage.id.to_string(),
+                voyage.intent,
+                voyage.created_at.to_string(),
+                status,
+                ended_at,
+                ended_status,
+            ],
+        )?;
+
         Ok(())
     }
 
-    /// Updates a voyage's metadata on disk.
+    /// Updates a voyage's metadata (used to transition status to ended).
     pub fn update_voyage(&self, voyage: &Voyage) -> Result<()> {
-        let path = self.voyage_dir(voyage.id).join("voyage.json");
-        if !path.exists() {
+        let conn = self.open_voyage(voyage.id)?;
+        let (status, ended_at, ended_status) = encode_status(&voyage.status);
+        let affected = conn.execute(
+            "UPDATE voyage SET status = ?1, ended_at = ?2, ended_status = ?3 WHERE id = ?4",
+            rusqlite::params![status, ended_at, ended_status, voyage.id.to_string()],
+        )?;
+
+        if affected == 0 {
             return Err(StorageError::VoyageNotFound(voyage.id));
         }
-        let json = serde_json::to_string_pretty(voyage)?;
-        fs::write(path, json)?;
+
         Ok(())
     }
 
-    /// Loads a single voyage's metadata.
+    /// Loads a single voyage's metadata from its database.
     pub fn load_voyage(&self, id: Uuid) -> Result<Voyage> {
-        let path = self.voyage_dir(id).join("voyage.json");
-        if !path.exists() {
-            return Err(StorageError::VoyageNotFound(id));
-        }
-        let json = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&json)?)
+        let conn = self.open_voyage(id)?;
+        conn.query_row(
+            "SELECT id, intent, created_at, status, ended_at, ended_status FROM voyage LIMIT 1",
+            [],
+            decode_voyage,
+        )
+        .map_err(StorageError::from)
     }
 
-    /// Lists all voyages by reading each voyage directory's metadata.
+    /// Lists all voyages by scanning the storage root for `*.sqlite` files.
     pub fn list_voyages(&self) -> Result<Vec<Voyage>> {
-        let mut voyages = Vec::new();
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(voyages),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(e) => return Err(e.into()),
         };
+
+        let mut voyages = Vec::new();
         for entry in entries {
             let entry = entry?;
-            let path = entry.path().join("voyage.json");
-            if path.is_file() {
-                let json = fs::read_to_string(&path)?;
-                voyages.push(serde_json::from_str(&json)?);
+            let path = entry.path();
+
+            let is_sqlite = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e == "sqlite");
+            if !is_sqlite {
+                continue;
+            }
+
+            // Parse the UUID from the filename; skip non-UUID filenames.
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Ok(id) = stem.parse::<Uuid>() else {
+                continue;
+            };
+
+            match self.load_voyage(id) {
+                Ok(v) => voyages.push(v),
+                Err(StorageError::Db(_)) => {} // Corrupted or unrelated file; skip.
+                Err(e) => return Err(e),
             }
         }
-        voyages.sort_by(|a: &Voyage, b: &Voyage| a.created_at.cmp(&b.created_at));
+
+        voyages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         Ok(voyages)
     }
+}
+
+/// Encode a `VoyageStatus` into its SQL column values.
+fn encode_status(status: &VoyageStatus) -> (&'static str, Option<String>, Option<String>) {
+    match status {
+        VoyageStatus::Active => ("active", None, None),
+        VoyageStatus::Ended { ended_at, status } => {
+            ("ended", Some(ended_at.to_string()), status.clone())
+        }
+    }
+}
+
+/// Decode a voyage row from a rusqlite `Row`.
+fn decode_voyage(row: &rusqlite::Row<'_>) -> rusqlite::Result<Voyage> {
+    let id_str: String = row.get(0)?;
+    let intent: String = row.get(1)?;
+    let created_at_str: String = row.get(2)?;
+    let status_str: String = row.get(3)?;
+    let ended_at_str: Option<String> = row.get(4)?;
+    let ended_status: Option<String> = row.get(5)?;
+
+    let id = id_str.parse::<Uuid>().map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+
+    let created_at = created_at_str.parse::<Timestamp>().map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+
+    let status = match status_str.as_str() {
+        "active" => VoyageStatus::Active,
+        "ended" => {
+            let ended_at = ended_at_str
+                .as_deref()
+                .unwrap_or_default()
+                .parse::<Timestamp>()
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        4,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+            VoyageStatus::Ended {
+                ended_at,
+                status: ended_status,
+            }
+        }
+        _ => {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                format!("unknown voyage status: {status_str}").into(),
+            ));
+        }
+    };
+
+    Ok(Voyage {
+        id,
+        intent,
+        created_at,
+        status,
+    })
 }
 
 #[cfg(test)]
@@ -69,9 +173,6 @@ mod tests {
 
     use jiff::Timestamp;
     use tempfile::TempDir;
-    use uuid::Uuid;
-
-    use crate::model::*;
 
     fn test_storage() -> (TempDir, Storage) {
         let dir = TempDir::new().unwrap();
